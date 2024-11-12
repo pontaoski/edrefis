@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2024 Janet Blackquill <uhhadd@gmail.com>
+#
+# SPDX-License-Identifier: CC0-1.0
+
+[package]
+name = "logic"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nanoserde = "0.1.37"

@@ -49,12 +49,19 @@ impl Inputs {
 
     fn key_down(&self, code: Input, provider: &mut dyn InputProvider) -> bool {
         match code {
-        Input::Left | Input::Right => {
+        Input::Left | Input::Right | Input::Up | Input::Down => {
             let left = self.inputs_tickstamps.get(&Input::Left).unwrap_or(&0);
             let right = self.inputs_tickstamps.get(&Input::Right).unwrap_or(&0);
-            if code == Input::Left && left >= right && provider.key_down(code) {
+            let up = self.inputs_tickstamps.get(&Input::Up).unwrap_or(&0);
+            let down = self.inputs_tickstamps.get(&Input::Down).unwrap_or(&0);
+
+            if code == Input::Left && left >= right && left >= up && left >= down && provider.key_down(code) {
                 true
-            } else if code == Input::Right && right >= left && provider.key_down(code) {
+            } else if code == Input::Right && right >= left && right >= up && right >= down && provider.key_down(code) {
+                true
+            } else if code == Input::Up && up >= down && up >= left && up >= right && provider.key_down(code) {
+                true
+            } else if code == Input::Down && down >= up && down >= left && down >= right && provider.key_down(code) {
                 true
             } else {
                 false

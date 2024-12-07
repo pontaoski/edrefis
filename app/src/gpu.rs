@@ -3,9 +3,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use cgmath::{Matrix4, Rad, SquareMatrix, Vector2, Vector3, Zero};
-use logic::{
-    well::{WELL_COLS, WELL_ROWS},
-};
 use std::{borrow::Cow, rc::Rc};
 use wgpu::util::DeviceExt;
 
@@ -303,7 +300,7 @@ impl State<'_> {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -486,21 +483,10 @@ impl State<'_> {
     pub fn set_camera(&mut self, camera: &dyn Camera) {
         self.camera_matrix = camera.matrix();
     }
-    pub fn do_draw(&mut self, target: &wgpu::TextureView) -> Result<(), String> {
+    pub fn do_draw(&mut self, target: &wgpu::TextureView, clear: Option<wgpu::Color>) -> Result<(), String> {
         if self.vertices.is_empty() {
             return Ok(());
         }
-
-        // let move_to_origin = Matrix4::from_translation(Vector3::new(
-        //     -(WELL_COLS as f32) / 2.,
-        //     -(WELL_ROWS as f32) / 2.,
-        //     0.,
-        // ));
-        // let scale_down =
-        //     Matrix4::from_nonuniform_scale(2. / WELL_COLS as f32, -2. / WELL_ROWS as f32, 1.);
-
-        // let composed = scale_down * move_to_origin;
-        // let composed = Matrix4::identity();
 
         let matrix = MatrixUniform::from(&self.camera_matrix);
 
@@ -544,7 +530,7 @@ impl State<'_> {
                 view: target,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    load: clear.map(wgpu::LoadOp::Clear).unwrap_or(wgpu::LoadOp::Load),
                     store: wgpu::StoreOp::Store,
                 },
             })],

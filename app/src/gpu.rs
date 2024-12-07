@@ -103,6 +103,7 @@ pub fn rectangle(
 
 pub trait Camera {
     fn matrix(&self) -> Matrix4<f32>;
+    fn texture(&self) -> Option<Rc<wgpu::TextureView>>;
 }
 
 #[derive(Debug)]
@@ -111,10 +112,11 @@ pub struct Camera2D {
     pub zoom: Vector2<f32>,
     pub target: Vector2<f32>,
     pub offset: Vector2<f32>,
+    pub texture: Option<Rc<wgpu::TextureView>>,
 }
 
 impl Camera2D {
-    pub fn from_rect(position: Vector2<f32>, size: Vector2<f32>) -> Camera2D {
+    pub fn from_rect(position: Vector2<f32>, size: Vector2<f32>, texture: Option<Rc<wgpu::TextureView>>) -> Camera2D {
         let target = position + (size / 2.);
 
         Camera2D {
@@ -122,6 +124,7 @@ impl Camera2D {
             zoom: Vector2::new(1. / size.x * 2., -1. / size.y * 2.),
             offset: Vector2::zero(),
             rotation: 0.,
+            texture,
         }
     }
 }
@@ -131,15 +134,23 @@ impl Camera for Camera2D {
         let mat_origin = Matrix4::from_translation(Vector3::new(-self.target.x, -self.target.y, 0.0));
         let mat_rotation = Matrix4::from_axis_angle(Vector3::new(0.0, 0.0, 1.0), Rad(self.rotation));
 
-        let mat_scale = Matrix4::from_nonuniform_scale(self.zoom.x, self.zoom.y, 1.0);
+        let y_invert = if self.texture.is_some() { -1.0 } else { 1.0 };
+
+        let mat_scale = Matrix4::from_nonuniform_scale(self.zoom.x, self.zoom.y * y_invert, 1.0);
         let mat_translation = Matrix4::from_translation(Vector3::new(self.offset.x, self.offset.y, 0.0));
 
         mat_translation * ((mat_scale * mat_rotation) * mat_origin)
     }
+    fn texture(&self) -> Option<Rc<wgpu::TextureView>> {
+        self.texture.clone()
+    }
 }
 
 pub struct State<'a> {
-    pub surface: wgpu::Surface<'a>,
+    frame_texture: Option<Rc<wgpu::TextureView>>,
+    frame: Option<wgpu::SurfaceTexture>,
+
+    surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -151,6 +162,7 @@ pub struct State<'a> {
     window: &'a sdl2::video::Window,
 
     camera_matrix: Matrix4<f32>,
+    camera_texture: Option<Rc<wgpu::TextureView>>,
     active_bind_group: Rc<wgpu::BindGroup>,
     vertices: Vec<AVertex>,
     indices: Vec<u16>,
@@ -325,6 +337,8 @@ impl State<'_> {
         });
 
         let white_texture = Rc::new(State::white_texture(&device, &queue, &texture_bind_group_layout));
+        let frame = surface.get_current_texture().map_err(|e| e.to_string())?;
+        let output = Rc::new(frame.texture.create_view(&wgpu::TextureViewDescriptor::default()));
 
         Ok(State {
             surface,
@@ -337,7 +351,11 @@ impl State<'_> {
             window,
             white_texture: white_texture.clone(),
 
+            frame: Some(frame),
+            frame_texture: Some(output),
+
             camera_matrix: Matrix4::identity(),
+            camera_texture: None,
             active_bind_group: white_texture,
             vertices: vec![],
             indices: vec![],
@@ -466,10 +484,31 @@ impl State<'_> {
 
         Rc::new(texture_bind_group)
     }
-    pub fn resize(&mut self, width: u32, height: u32) {
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<(), String> {
         self.config.width = width as u32;
         self.config.height = height as u32;
+
+        let frame = std::mem::replace(&mut self.frame, None).unwrap();
+        let output = std::mem::replace(&mut self.frame_texture, None).unwrap();
+
+        drop(frame);
+        drop(output);
+
         self.surface.configure(&self.device, &self.config);
+
+        let next_frame = self
+            .surface
+            .get_current_texture()
+            .map_err(|e| e.to_string())?;
+
+        let next_output = next_frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        self.frame = Some(next_frame);
+        self.frame_texture = Some(Rc::new(next_output));
+
+        Ok(())
     }
     pub fn queue_draw<const V: usize, const I: usize>(&mut self, data: ([AVertex; V], [u16; I])) {
         let (v, i) = data;
@@ -482,8 +521,9 @@ impl State<'_> {
     }
     pub fn set_camera(&mut self, camera: &dyn Camera) {
         self.camera_matrix = camera.matrix();
+        self.camera_texture = camera.texture();
     }
-    pub fn do_draw(&mut self, target: &wgpu::TextureView, clear: Option<wgpu::Color>) -> Result<(), String> {
+    pub fn do_draw(&mut self, clear: Option<wgpu::Color>) -> Result<(), String> {
         if self.vertices.is_empty() {
             return Ok(());
         }
@@ -527,7 +567,10 @@ impl State<'_> {
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: target,
+                view: match &self.camera_texture {
+                    Some(texture) => &texture,
+                    None => &self.frame_texture.as_ref().unwrap(),
+                },
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: clear.map(wgpu::LoadOp::Clear).unwrap_or(wgpu::LoadOp::Load),
@@ -552,6 +595,26 @@ impl State<'_> {
 
         self.vertices.clear();
         self.indices.clear();
+
+        Ok(())
+    }
+    pub fn present(&mut self) -> Result<(), String> {
+        let frame = std::mem::replace(&mut self.frame, None).unwrap();
+        let output = std::mem::replace(&mut self.frame_texture, None).unwrap();
+
+        frame.present();
+
+        let next_frame = self
+            .surface
+            .get_current_texture()
+            .map_err(|e| e.to_string())?;
+
+        let next_output = next_frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        self.frame = Some(next_frame);
+        self.frame_texture = Some(Rc::new(next_output));
 
         Ok(())
     }

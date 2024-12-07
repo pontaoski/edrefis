@@ -106,7 +106,7 @@ fn main() -> Result<(), String> {
     sdl::mixer::allocate_channels(4);
 
     let window = video
-        .window("Edrefis", WELL_COLS as u32 * 20, WELL_ROWS as u32 * 20)
+        .window("Edrefis", WELL_COLS as u32 * 40, WELL_ROWS as u32 * 40)
         .position_centered()
         .resizable()
         .metal_view()
@@ -136,7 +136,7 @@ fn main() -> Result<(), String> {
                     win_event: WindowEvent::SizeChanged(width, height),
                     ..
                 } if window_id == window.id() => {
-                    gpu_state.resize(width as u32, height as u32);
+                    gpu_state.resize(width as u32, height as u32)?;
                 }
                 Event::KeyDown {
                     keycode:

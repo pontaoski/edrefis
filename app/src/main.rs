@@ -24,6 +24,7 @@ mod graphics;
 mod sounds;
 mod text;
 mod gpu;
+mod graphics_gpu;
 
 #[derive(Clone, Copy)]
 struct DummyImpl;
@@ -114,6 +115,7 @@ fn main() -> Result<(), String> {
 
     let (width, height) = window.size();
     let mut gpu_state = pollster::block_on(gpu::State::new(&window))?;
+    let mut graphics = graphics_gpu::Graphics::new(&gpu_state)?;
 
     let mut field = Field::new();
     let mut input_provider = SDLInputs::new();
@@ -177,10 +179,10 @@ fn main() -> Result<(), String> {
 
         match field.state {
             GameState::ActivePiece { piece } => {
-                gpu_state.render(&field.well, &piece)?;
+                graphics.render(&field.well, &piece, &mut gpu_state)?;
             }
             _ => {
-                gpu_state.render(&field.well, &field.next)?;
+                graphics.render(&field.well, &field.next, &mut gpu_state)?;
             }
         }
 

@@ -2,29 +2,27 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use cgmath::{Matrix4, SquareMatrix, Vector3};
+use cgmath::{Matrix4, Rad, SquareMatrix, Vector2, Vector3, Zero};
 use logic::{
-    piece::Piece,
-    well::{Block, Well, WELL_COLS, WELL_ROWS},
+    well::{WELL_COLS, WELL_ROWS},
 };
-use sdl2::image::ImageRWops;
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, rc::Rc};
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct AVertex {
+pub struct AVertex {
     position: [f32; 3],
     color: [f32; 4],
     uv: [f32; 2],
 }
 
 impl AVertex {
-    fn new(position: Vector3<f32>, color: wgpu::Color, uv: [f32; 2]) -> AVertex {
+    fn new(position: Vector3<f32>, color: wgpu::Color, uv: Vector2<f32>) -> AVertex {
         AVertex {
             position: position.into(),
             color: [color.r as f32, color.g as f32, color.b as f32, color.a as f32],
-            uv,
+            uv: [uv.x, uv.y],
         }
     }
     fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -66,69 +64,99 @@ impl MatrixUniform {
     }
 }
 
-fn parallelogram(
+pub fn parallelogram(
     position: Vector3<f32>,
     edge1: Vector3<f32>,
     edge2: Vector3<f32>,
+    uv_position: Vector2<f32>,
+    uv_edge1: Vector2<f32>,
+    uv_edge2: Vector2<f32>,
     color: wgpu::Color,
-    block: Block,
 ) -> ([AVertex; 4], [u16; 6]) {
-    let base = texture_index(block) as f32 * 1. / 12.;
     (
         [
-            AVertex::new(position, color, [base, 0.]),
-            AVertex::new(position + edge1, color, [base + 1. / 12., 0.]),
-            AVertex::new(position + edge1 + edge2, color, [base + 1. / 12., 1.]),
-            AVertex::new(position + edge2, color, [base, 1.]),
+            AVertex::new(position, color, uv_position),
+            AVertex::new(position + edge1, color, uv_position + uv_edge1),
+            AVertex::new(position + edge1 + edge2, color, uv_position + uv_edge1 + uv_edge2),
+            AVertex::new(position + edge2, color, uv_position + uv_edge2),
         ],
         [0, 1, 2, 0, 2, 3]
     )
 }
 
-fn rectangle(
+pub fn rectangle(
     position: Vector3<f32>,
     width: f32,
     height: f32,
+    uv_position: Vector2<f32>,
+    uv_width: f32,
+    uv_height: f32,
     color: wgpu::Color,
-    block: Block,
 ) -> ([AVertex; 4], [u16; 6]) {
-    parallelogram(position, width * Vector3::unit_x(), height * Vector3::unit_y(), color, block)
+    parallelogram(
+        position,
+        width * Vector3::unit_x(),
+        height * Vector3::unit_y(),
+        uv_position,
+        uv_width * Vector2::unit_x(),
+        uv_height * Vector2::unit_y(),
+        color,
+    )
 }
 
-fn texture_index(block: Block) -> i32 {
-    match block {
-        Block::Red => 0,
-        Block::Orange => 1,
-        Block::Yellow => 2,
-        Block::Green => 3,
-        Block::Cyan => 4,
-        Block::Blue => 5,
-        Block::Purple => 6,
+pub trait Camera {
+    fn matrix(&self) -> Matrix4<f32>;
+}
+
+#[derive(Debug)]
+pub struct Camera2D {
+    pub rotation: f32,
+    pub zoom: Vector2<f32>,
+    pub target: Vector2<f32>,
+    pub offset: Vector2<f32>,
+}
+
+impl Camera2D {
+    pub fn from_rect(position: Vector2<f32>, size: Vector2<f32>) -> Camera2D {
+        let target = position + (size / 2.);
+
+        Camera2D {
+            target,
+            zoom: Vector2::new(1. / size.x * 2., -1. / size.y * 2.),
+            offset: Vector2::zero(),
+            rotation: 0.,
+        }
+    }
+}
+
+impl Camera for Camera2D {
+    fn matrix(&self) -> Matrix4<f32> {
+        let mat_origin = Matrix4::from_translation(Vector3::new(-self.target.x, -self.target.y, 0.0));
+        let mat_rotation = Matrix4::from_axis_angle(Vector3::new(0.0, 0.0, 1.0), Rad(self.rotation));
+
+        let mat_scale = Matrix4::from_nonuniform_scale(self.zoom.x, self.zoom.y, 1.0);
+        let mat_translation = Matrix4::from_translation(Vector3::new(self.offset.x, self.offset.y, 0.0));
+
+        mat_translation * ((mat_scale * mat_rotation) * mat_origin)
     }
 }
 
 pub struct State<'a> {
-    surface: wgpu::Surface<'a>,
+    pub surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
-    texture_bind_group: wgpu::BindGroup,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
     matrix_bind_group_layout: wgpu::BindGroupLayout,
+    white_texture: Rc<wgpu::BindGroup>,
 
     window: &'a sdl2::video::Window,
-}
 
-fn color(block: Block) -> wgpu::Color {
-    match block {
-    Block::Red => wgpu::Color { r: 1.0, g: 0.0, b: 0.18823529411764706, a: 1.0 },
-    Block::Orange => wgpu::Color { r: 1.0, g: 0.4392156862745098, b: 0.0, a: 1.0 },
-    Block::Yellow => wgpu::Color { r: 1.0, g: 0.7647058823529411, b: 0.0, a: 1.0 },
-    Block::Green => wgpu::Color { r: 0.4588235294117647, g: 0.9333333333333333, b: 0.2235294117647059, a: 1.0 },
-    Block::Cyan => wgpu::Color { r: 0.0, g: 0.9411764705882353, b: 0.8274509803921568, a: 1.0 },
-    Block::Blue => wgpu::Color { r: 0.25098039215686274, g: 0.6235294117647059, b: 0.9725490196078431, a: 1.0 },
-    Block::Purple => wgpu::Color { r: 0.7137254901960784, g: 0.47058823529411764, b: 0.9607843137254902, a: 1.0 },
-    }
+    camera_matrix: Matrix4<f32>,
+    active_bind_group: Rc<wgpu::BindGroup>,
+    vertices: Vec<AVertex>,
+    indices: Vec<u16>,
 }
 
 impl State<'_> {
@@ -238,54 +266,6 @@ impl State<'_> {
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("ashader.wgsl"))),
         });
 
-        let compilation_options = wgpu::PipelineCompilationOptions {
-            constants: &HashMap::new(),
-            zero_initialize_workgroup_memory: true,
-        };
-
-        let png = sdl2::rwops::RWops::from_bytes(include_bytes!("gfx/tiles.png"))?.load_png()?;
-        let size = wgpu::Extent3d {
-            width: png.width(),
-            height: png.height(),
-            depth_or_array_layers: 1,
-        };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("blocks"),
-            view_formats: &[],
-        });
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            png.without_lock().unwrap(),
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(png.pitch()),
-                rows_per_image: Some(png.height()),
-            },
-            size,
-        );
-
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -308,21 +288,6 @@ impl State<'_> {
                 ],
                 label: Some("texture_bind_group_layout"),
             });
-
-        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
-        });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -362,78 +327,182 @@ impl State<'_> {
             cache: None,
         });
 
+        let white_texture = Rc::new(State::white_texture(&device, &queue, &texture_bind_group_layout));
+
         Ok(State {
             surface,
             device,
             queue,
             config,
             render_pipeline,
-            texture_bind_group,
+            texture_bind_group_layout,
             matrix_bind_group_layout,
             window,
+            white_texture: white_texture.clone(),
+
+            camera_matrix: Matrix4::identity(),
+            active_bind_group: white_texture,
+            vertices: vec![],
+            indices: vec![],
         })
+    }
+    fn white_texture(device: &wgpu::Device, queue: &wgpu::Queue, texture_bind_group_layout: &wgpu::BindGroupLayout) -> wgpu::BindGroup {
+        let size = wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        };
+
+       let texture = device.create_texture(&wgpu::TextureDescriptor {
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("blocks"),
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &[255, 255, 255, 255],
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            size,
+        );
+
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+            label: Some("texture_bind_group"),
+        });
+
+        texture_bind_group
+    }
+    pub fn upload_texture(&self, surface: &sdl2::surface::Surface) -> Rc<wgpu::BindGroup> {
+        let size = wgpu::Extent3d {
+            width: surface.width(),
+            height: surface.height(),
+            depth_or_array_layers: 1,
+        };
+
+       let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("blocks"),
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            surface.without_lock().unwrap(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(surface.pitch()),
+                rows_per_image: Some(surface.height()),
+            },
+            size,
+        );
+
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+            label: Some("texture_bind_group"),
+        });
+
+        Rc::new(texture_bind_group)
     }
     pub fn resize(&mut self, width: u32, height: u32) {
         self.config.width = width as u32;
         self.config.height = height as u32;
         self.surface.configure(&self.device, &self.config);
     }
-    pub fn render_well(
-        &mut self,
-        target: &wgpu::TextureView,
-        well: &Well,
-        piece: &Piece,
-    ) -> Result<(), String> {
-        let mut vertices: Vec<AVertex> = vec![];
-        let mut indices: Vec<u16> = vec![];
-
-        for (i, row) in well.blocks.iter().enumerate() {
-            for (j, col) in row.iter().enumerate() {
-                if let Some(block) = col {
-                    let bx = j as f32;
-                    let by = i as f32;
-
-                    let (v, i) = rectangle(Vector3::new(bx, by, 0.), 1., 1., wgpu::Color::WHITE, *block);
-                    let count = vertices.len() as u16;
-                    indices.extend(i.iter().map(|x| *x + count));
-                    vertices.extend_from_slice(&v);
-                }
-            }
-        }
-
-        for (i, row) in piece.rotations.piece_map()[piece.rotation]
-            .iter()
-            .enumerate()
-        {
-            for (j, col) in row.iter().enumerate() {
-                if *col {
-                    let bx = piece.x as f32 + j as f32;
-                    let by = piece.y as f32 + i as f32;
-
-                    let (v, i) = rectangle(Vector3::new(bx, by, 0.), 1., 1., wgpu::Color::WHITE, piece.color);
-                    let count = vertices.len() as u16;
-                    indices.extend(i.iter().map(|x| *x + count));
-                    vertices.extend_from_slice(&v);
-                }
-            }
-        }
-
-        if vertices.is_empty() {
+    pub fn queue_draw<const V: usize, const I: usize>(&mut self, data: ([AVertex; V], [u16; I])) {
+        let (v, i) = data;
+        let count = self.vertices.len() as u16;
+        self.indices.extend(i.iter().map(|x| *x + count));
+        self.vertices.extend_from_slice(&v);
+    }
+    pub fn set_texture(&mut self, texture: Option<Rc<wgpu::BindGroup>>) {
+        self.active_bind_group = texture.unwrap_or(self.white_texture.clone());
+    }
+    pub fn set_camera(&mut self, camera: &dyn Camera) {
+        self.camera_matrix = camera.matrix();
+    }
+    pub fn do_draw(&mut self, target: &wgpu::TextureView) -> Result<(), String> {
+        if self.vertices.is_empty() {
             return Ok(());
         }
 
-        let move_to_origin = Matrix4::from_translation(Vector3::new(
-            -(WELL_COLS as f32) / 2.,
-            -(WELL_ROWS as f32) / 2.,
-            0.,
-        ));
-        let scale_down =
-            Matrix4::from_nonuniform_scale(2. / WELL_COLS as f32, -2. / WELL_ROWS as f32, 1.);
+        // let move_to_origin = Matrix4::from_translation(Vector3::new(
+        //     -(WELL_COLS as f32) / 2.,
+        //     -(WELL_ROWS as f32) / 2.,
+        //     0.,
+        // ));
+        // let scale_down =
+        //     Matrix4::from_nonuniform_scale(2. / WELL_COLS as f32, -2. / WELL_ROWS as f32, 1.);
 
-        let composed = scale_down * move_to_origin;
+        // let composed = scale_down * move_to_origin;
         // let composed = Matrix4::identity();
 
-        let matrix = MatrixUniform::from(&composed);
+        let matrix = MatrixUniform::from(&self.camera_matrix);
 
         let matrix_buffer = self
             .device
@@ -454,15 +523,15 @@ impl State<'_> {
 
         let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Well Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
+            contents: bytemuck::cast_slice(&self.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Well Index Buffer"),
-            contents: bytemuck::cast_slice(&indices),
+            contents: bytemuck::cast_slice(&self.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let num_indices = indices.len() as u32;
+        let num_indices = self.indices.len() as u32;
 
         let mut encoder = self
             .device
@@ -485,7 +554,7 @@ impl State<'_> {
             occlusion_query_set: None,
         });
         render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+        render_pass.set_bind_group(0, self.active_bind_group.as_ref(), &[]);
         render_pass.set_bind_group(1, &matrix_bind_group, &[]);
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         // render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
@@ -495,21 +564,8 @@ impl State<'_> {
         drop(render_pass);
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        Ok(())
-    }
-    pub fn render(&mut self, well: &Well, piece: &Piece) -> Result<(), String> {
-        let frame = self
-            .surface
-            .get_current_texture()
-            .map_err(|e| e.to_string())?;
-
-        let output = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        self.render_well(&output, well, piece)?;
-
-        frame.present();
+        self.vertices.clear();
+        self.indices.clear();
 
         Ok(())
     }

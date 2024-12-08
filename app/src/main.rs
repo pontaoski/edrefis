@@ -98,7 +98,7 @@ fn main() -> Result<(), String> {
     let channels = sdl::mixer::DEFAULT_CHANNELS;
     let chunk_size = 1_024;
     sdl::mixer::open_audio(frequency, format, channels, chunk_size)?;
-    sdl::mixer::allocate_channels(4);
+    sdl::mixer::allocate_channels(8);
 
     let window = video
         .window("Edrefis", WELL_COLS as u32 * 60, WELL_COLS as u32 * 60)

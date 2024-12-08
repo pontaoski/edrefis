@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use cgmath::{Matrix4, Rad, SquareMatrix, Vector2, Vector3, Zero};
+// use cgmath::{perspective, Deg, Matrix4, Point3, Rad, SquareMatrix, Vector2, Vector3, Vector4, Zero};
 use std::{borrow::Cow, rc::Rc};
+use glam::{Mat4, Vec2, Vec3};
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -15,7 +16,7 @@ pub struct AVertex {
 }
 
 impl AVertex {
-    fn new(position: Vector3<f32>, color: wgpu::Color, uv: Vector2<f32>) -> AVertex {
+    fn new(position: Vec3, color: wgpu::Color, uv: Vec2) -> AVertex {
         AVertex {
             position: position.into(),
             color: [color.r as f32, color.g as f32, color.b as f32, color.a as f32],
@@ -54,20 +55,20 @@ struct MatrixUniform {
 }
 
 impl MatrixUniform {
-    fn from(mtx: &cgmath::Matrix4<f32>) -> MatrixUniform {
+    fn from(mtx: &Mat4) -> MatrixUniform {
         MatrixUniform {
-            matrix: (*mtx).into(),
+            matrix: (*mtx).to_cols_array_2d(),
         }
     }
 }
 
 pub fn parallelogram(
-    position: Vector3<f32>,
-    edge1: Vector3<f32>,
-    edge2: Vector3<f32>,
-    uv_position: Vector2<f32>,
-    uv_edge1: Vector2<f32>,
-    uv_edge2: Vector2<f32>,
+    position: Vec3,
+    edge1: Vec3,
+    edge2: Vec3,
+    uv_position: Vec2,
+    uv_edge1: Vec2,
+    uv_edge2: Vec2,
     color: wgpu::Color,
 ) -> ([AVertex; 4], [u16; 6]) {
     (
@@ -82,47 +83,56 @@ pub fn parallelogram(
 }
 
 pub fn rectangle(
-    position: Vector3<f32>,
+    position: Vec3,
     width: f32,
     height: f32,
-    uv_position: Vector2<f32>,
+    uv_position: Vec2,
     uv_width: f32,
     uv_height: f32,
     color: wgpu::Color,
 ) -> ([AVertex; 4], [u16; 6]) {
     parallelogram(
         position,
-        width * Vector3::unit_x(),
-        height * Vector3::unit_y(),
+        width * Vec3::X,
+        height * Vec3::Y,
         uv_position,
-        uv_width * Vector2::unit_x(),
-        uv_height * Vector2::unit_y(),
+        uv_width * Vec2::X,
+        uv_height * Vec2::Y,
         color,
     )
 }
 
 pub trait Camera {
-    fn matrix(&self) -> Matrix4<f32>;
+    fn matrix(&self, screen: &wgpu::SurfaceConfiguration) -> Mat4;
     fn texture(&self) -> Option<Rc<wgpu::TextureView>>;
 }
 
 #[derive(Debug)]
 pub struct Camera2D {
     pub rotation: f32,
-    pub zoom: Vector2<f32>,
-    pub target: Vector2<f32>,
-    pub offset: Vector2<f32>,
+    pub zoom: Vec2,
+    pub target: Vec2,
+    pub offset: Vec2,
+    pub texture: Option<Rc<wgpu::TextureView>>,
+}
+
+#[derive(Debug)]
+pub struct Camera3D {
+    pub position: Vec3,
+    pub target: Vec3,
+    pub up: Vec3,
+    pub fov_y: f32,
     pub texture: Option<Rc<wgpu::TextureView>>,
 }
 
 impl Camera2D {
-    pub fn from_rect(position: Vector2<f32>, size: Vector2<f32>, texture: Option<Rc<wgpu::TextureView>>) -> Camera2D {
+    pub fn from_rect(position: Vec2, size: Vec2, texture: Option<Rc<wgpu::TextureView>>) -> Camera2D {
         let target = position + (size / 2.);
 
         Camera2D {
             target,
-            zoom: Vector2::new(1. / size.x * 2., -1. / size.y * 2.),
-            offset: Vector2::zero(),
+            zoom: Vec2::new(1. / size.x * 2., -1. / size.y * 2.),
+            offset: Vec2::ZERO,
             rotation: 0.,
             texture,
         }
@@ -130,19 +140,53 @@ impl Camera2D {
 }
 
 impl Camera for Camera2D {
-    fn matrix(&self) -> Matrix4<f32> {
-        let mat_origin = Matrix4::from_translation(Vector3::new(-self.target.x, -self.target.y, 0.0));
-        let mat_rotation = Matrix4::from_axis_angle(Vector3::new(0.0, 0.0, 1.0), Rad(self.rotation));
+    fn matrix(&self, _screen: &wgpu::SurfaceConfiguration) -> Mat4 {
+        let mat_origin = Mat4::from_translation(Vec3::new(-self.target.x, -self.target.y, 0.0));
+        let mat_rotation = Mat4::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), self.rotation);
 
         let y_invert = if self.texture.is_some() { -1.0 } else { 1.0 };
 
-        let mat_scale = Matrix4::from_nonuniform_scale(self.zoom.x, self.zoom.y * y_invert, 1.0);
-        let mat_translation = Matrix4::from_translation(Vector3::new(self.offset.x, self.offset.y, 0.0));
+        let mat_scale = Mat4::from_scale(Vec3::new(self.zoom.x, self.zoom.y * y_invert, 1.0));
+        let mat_translation = Mat4::from_translation(Vec3::new(self.offset.x, self.offset.y, 0.0));
 
         mat_translation * ((mat_scale * mat_rotation) * mat_origin)
     }
     fn texture(&self) -> Option<Rc<wgpu::TextureView>> {
         self.texture.clone()
+    }
+}
+
+// #[rustfmt::skip]
+// const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+//     1.0, 0.0, 0.0, 0.0,
+//     0.0, 1.0, 0.0, 0.0,
+//     0.0, 0.0, 0.5, 0.5,
+//     0.0, 0.0, 0.0, 1.0,
+// );
+
+impl Camera for Camera3D {
+    fn matrix(&self, screen: &wgpu::SurfaceConfiguration) -> Mat4 {
+        let aspect = screen.width as f32 / screen.height as f32;
+
+        let view = Mat4::look_at_rh(self.position, self.target, self.up);
+        let proj = Mat4::perspective_rh_gl(self.fov_y, aspect, 0.01, 10000.0);
+
+        return proj * view;
+    }
+    fn texture(&self) -> Option<Rc<wgpu::TextureView>> {
+        self.texture.clone()
+    }
+}
+
+impl Default for Camera3D {
+    fn default() -> Camera3D {
+        Camera3D {
+            position: Vec3::new(0., 0., 35.),
+            target: Vec3::new(0., 0., 0.),
+            up: Vec3::Y,
+            fov_y: 45.0_f32.to_radians(),
+            texture: None,
+        }
     }
 }
 
@@ -161,7 +205,7 @@ pub struct State<'a> {
 
     window: &'a sdl2::video::Window,
 
-    camera_matrix: Matrix4<f32>,
+    camera_matrix: Mat4,
     camera_texture: Option<Rc<wgpu::TextureView>>,
     active_bind_group: Rc<wgpu::BindGroup>,
     vertices: Vec<AVertex>,
@@ -354,7 +398,7 @@ impl State<'_> {
             frame: Some(frame),
             frame_texture: Some(output),
 
-            camera_matrix: Matrix4::identity(),
+            camera_matrix: Mat4::IDENTITY,
             camera_texture: None,
             active_bind_group: white_texture,
             vertices: vec![],
@@ -422,6 +466,52 @@ impl State<'_> {
         });
 
         texture_bind_group
+    }
+    pub fn create_texture(&self, width: u32, height: u32) -> (Rc<wgpu::BindGroup>, Rc<wgpu::TextureView>) {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+       let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            label: Some("blocks"),
+            view_formats: &[],
+        });
+
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+            label: Some("texture_bind_group"),
+        });
+
+        (Rc::new(texture_bind_group), Rc::new(texture_view))
     }
     pub fn upload_texture(&self, surface: &sdl2::surface::Surface) -> Rc<wgpu::BindGroup> {
         let size = wgpu::Extent3d {
@@ -520,7 +610,7 @@ impl State<'_> {
         self.active_bind_group = texture.unwrap_or(self.white_texture.clone());
     }
     pub fn set_camera(&mut self, camera: &dyn Camera) {
-        self.camera_matrix = camera.matrix();
+        self.camera_matrix = camera.matrix(&self.config);
         self.camera_texture = camera.texture();
     }
     pub fn do_draw(&mut self, clear: Option<wgpu::Color>) -> Result<(), String> {

@@ -14,4 +14,5 @@ sdl3 = { version = "0", features = ["build-from-source-static"] }
 wgpu = { version = "23.0.0", features = ["webgl"] }
 pollster = "0.4.0"
 bytemuck = { version = "1.19.0", features = ["derive"] }
-cgmath = "0.18.0"
+# cgmath = "0.18.0"
+glam = "0.29.2"

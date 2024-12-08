@@ -4,10 +4,11 @@
 
 use std::rc::Rc;
 
-use cgmath::{Vector2, Vector3, Zero};
+use glam::{Vec2, Vec3};
+// use cgmath::{Point3, Vector2, Vector3, Zero};
 use logic::{piece::Piece, well::{Block, Well, WELL_COLS, WELL_ROWS}};
 use sdl2::image::ImageRWops;
-use crate::{gpu::{rectangle, Camera2D, State}, lerp};
+use crate::{gpu::{parallelogram, rectangle, Camera2D, Camera3D, State}, lerp};
 
 fn texture_index(block: Block) -> i32 {
     match block {
@@ -34,8 +35,8 @@ fn color(block: Block) -> wgpu::Color {
     }
 }
 
-fn tilemap_position(block: Block) -> Vector2<f32> {
-    Vector2::new(texture_index(block) as f32 * 1. / 12., 0.)
+fn tilemap_position(block: Block) -> Vec2 {
+    Vec2::new(texture_index(block) as f32 * 1. / 12., 0.)
 }
 
 const TILEMAP_WIDTH: f32 = 1. / 12.;
@@ -43,6 +44,7 @@ const TILEMAP_HEIGHT: f32 = 1.;
 
 pub struct Graphics {
     tilemap: Rc<wgpu::BindGroup>,
+    well: (Rc<wgpu::BindGroup>, Rc<wgpu::TextureView>),
 }
 
 impl Graphics {
@@ -50,10 +52,71 @@ impl Graphics {
         let png = sdl2::rwops::RWops::from_bytes(include_bytes!("gfx/tiles.png"))?.load_png()?;
 
         let tilemap = state.upload_texture(&png);
+        let well = state.create_texture(WELL_COLS as u32 * 8, WELL_ROWS as u32 * 8);
 
         Ok(Graphics {
             tilemap,
+            well,
         })
+    }
+    pub fn queue_well_bg(state: &mut State) {
+        let well_width = WELL_COLS as f32;
+        let well_height = WELL_ROWS as f32;
+        let line_thickness: f32 = 1. / 8.;
+        let outline = wgpu::Color { r: 0.77625, g: 0.96804, b: 1.00513, a: 0.2 };
+        let wall = wgpu::Color { r: 0.77625, g: 0.96804, b: 1.00513, a: 0.1 };
+
+        // well bg
+        state.queue_draw(
+            parallelogram(
+                Vec3::new(well_width / -2., well_height / -2., -1.),
+                well_width * Vec3::X,
+                well_height * Vec3::Y,
+                Vec2::ZERO,
+                Vec2::X,
+                Vec2::Y,
+                wgpu::Color { r: 0., g: 0., b: 0., a: 0.4 },
+            )
+        );
+
+        // bottom
+        state.queue_draw(
+            parallelogram(
+                Vec3::new(well_width / -2., well_height / -2., -1.),
+                well_width * Vec3::X,
+                2. * Vec3::Z,
+                Vec2::ZERO,
+                Vec2::X,
+                Vec2::Y,
+                wall,
+            )
+        );
+
+        // left
+        state.queue_draw(
+            parallelogram(
+                Vec3::new(well_width / -2., well_height / -2., -1.),
+                well_height * Vec3::Y,
+                2. * Vec3::Z,
+                Vec2::ZERO,
+                Vec2::X,
+                Vec2::Y,
+                wall,
+            )
+        );
+
+        // right
+        state.queue_draw(
+            parallelogram(
+                Vec3::new(well_width / 2., well_height / -2., -1.),
+                well_height * Vec3::Y,
+                2. * Vec3::Z,
+                Vec2::ZERO,
+                Vec2::X,
+                Vec2::Y,
+                wall,
+            )
+        );
     }
     pub fn render_well(
         &self,
@@ -61,7 +124,7 @@ impl Graphics {
         piece: &Piece,
         state: &mut State,
     ) -> Result<(), String> {
-        state.set_camera(&Camera2D::from_rect(Vector2::new(0., 0.), Vector2::new(WELL_COLS as f32, WELL_ROWS as f32), None));
+        state.set_camera(&Camera2D::from_rect(Vec2::new(0., 0.), Vec2::new(WELL_COLS as f32, WELL_ROWS as f32), Some(self.well.1.clone())));
         state.set_texture(Some(self.tilemap.clone()));
 
         for (i, row) in well.blocks.iter().enumerate() {
@@ -70,7 +133,7 @@ impl Graphics {
                     let bx = j as f32;
                     let by = i as f32;
 
-                    state.queue_draw(rectangle(Vector3::new(bx, by, 0.), 1., 1., tilemap_position(*block), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
+                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(*block), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
                 }
             }
         }
@@ -84,12 +147,12 @@ impl Graphics {
                     let bx = piece.x as f32 + j as f32;
                     let by = piece.y as f32 + i as f32;
 
-                    state.queue_draw(rectangle(Vector3::new(bx, by, 0.), 1., 1., tilemap_position(piece.color), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
+                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(piece.color), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
                 }
             }
         }
 
-        state.do_draw(Some(wgpu::Color { r: 0.05, g: 0.05, b: 0.1, a: 1.0 }))?;
+        state.do_draw(Some(wgpu::Color { r: 0., g: 0., b: 0., a: 0. }))?;
 
         state.set_texture(None);
 
@@ -99,7 +162,7 @@ impl Graphics {
                     let bx = j as f32;
                     let by = i as f32;
 
-                    state.queue_draw(rectangle(Vector3::new(bx, by, 0.), 1., 1., Vector2::new(0., 0.), 1., 1., wgpu::Color { r: 0., g: 0., b: 0., a: 0.5 }));
+                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., Vec2::new(0., 0.), 1., 1., wgpu::Color { r: 0., g: 0., b: 0., a: 0.5 }));
                 }
             }
         }
@@ -132,33 +195,33 @@ impl Graphics {
                     let mut bottom = false;
 
                     if check(0, -1) {
-                        state.queue_draw(rectangle(Vector3::new(bx, by, 0.), DST_BLOCK_SIZE, DST_PIXEL_SIZE, Vector2::zero(), 1., 1., pixel_color));
+                        state.queue_draw(rectangle(Vec3::new(bx, by, 0.), DST_BLOCK_SIZE, DST_PIXEL_SIZE, Vec2::ZERO, 1., 1., pixel_color));
                         top = true;
                     }
                     if check(0, 1) {
-                        state.queue_draw(rectangle(Vector3::new(bx, by + DST_BLOCK_SIZE - DST_PIXEL_SIZE, 0.), DST_BLOCK_SIZE, DST_PIXEL_SIZE, Vector2::zero(), 1., 1., pixel_color));
+                        state.queue_draw(rectangle(Vec3::new(bx, by + DST_BLOCK_SIZE - DST_PIXEL_SIZE, 0.), DST_BLOCK_SIZE, DST_PIXEL_SIZE, Vec2::ZERO, 1., 1., pixel_color));
                         bottom = true;
                     }
                     if check(-1, 0) {
-                        state.queue_draw(rectangle(Vector3::new(bx, by, 0.), DST_PIXEL_SIZE, DST_BLOCK_SIZE, Vector2::zero(), 1., 1., pixel_color));
+                        state.queue_draw(rectangle(Vec3::new(bx, by, 0.), DST_PIXEL_SIZE, DST_BLOCK_SIZE, Vec2::ZERO, 1., 1., pixel_color));
                         left = true;
                     }
                     if check(1, 0) {
-                        state.queue_draw(rectangle(Vector3::new(bx + DST_BLOCK_SIZE - DST_PIXEL_SIZE, by, 0.), DST_PIXEL_SIZE, DST_BLOCK_SIZE, Vector2::zero(), 1., 1., pixel_color));
+                        state.queue_draw(rectangle(Vec3::new(bx + DST_BLOCK_SIZE - DST_PIXEL_SIZE, by, 0.), DST_PIXEL_SIZE, DST_BLOCK_SIZE, Vec2::ZERO, 1., 1., pixel_color));
                         right = true;
                     }
 
                     if !left && !top && check(-1, -1) {
-                        state.queue_draw(rectangle(Vector3::new(bx, by, 0.), DST_PIXEL_SIZE, DST_PIXEL_SIZE, Vector2::zero(), 1., 1., pixel_color));
+                        state.queue_draw(rectangle(Vec3::new(bx, by, 0.), DST_PIXEL_SIZE, DST_PIXEL_SIZE, Vec2::ZERO, 1., 1., pixel_color));
                     }
                     if !right && !top && check(1, -1) {
-                        state.queue_draw(rectangle(Vector3::new(bx + DST_BLOCK_SIZE - DST_PIXEL_SIZE, by, 0.), DST_PIXEL_SIZE, DST_PIXEL_SIZE, Vector2::zero(), 1., 1., pixel_color));
+                        state.queue_draw(rectangle(Vec3::new(bx + DST_BLOCK_SIZE - DST_PIXEL_SIZE, by, 0.), DST_PIXEL_SIZE, DST_PIXEL_SIZE, Vec2::ZERO, 1., 1., pixel_color));
                     }
                     if !left && !bottom && check(-1, 1) {
-                        state.queue_draw(rectangle(Vector3::new(bx, by + DST_BLOCK_SIZE - DST_PIXEL_SIZE, 0.), DST_PIXEL_SIZE, DST_PIXEL_SIZE, Vector2::zero(), 1., 1., pixel_color));
+                        state.queue_draw(rectangle(Vec3::new(bx, by + DST_BLOCK_SIZE - DST_PIXEL_SIZE, 0.), DST_PIXEL_SIZE, DST_PIXEL_SIZE, Vec2::ZERO, 1., 1., pixel_color));
                     }
                     if !right && !bottom && check(1, 1) {
-                        state.queue_draw(rectangle(Vector3::new(bx + DST_BLOCK_SIZE - DST_PIXEL_SIZE, by + DST_BLOCK_SIZE - DST_PIXEL_SIZE, 0.), DST_PIXEL_SIZE, DST_PIXEL_SIZE, Vector2::zero(), 1., 1., pixel_color));
+                        state.queue_draw(rectangle(Vec3::new(bx + DST_BLOCK_SIZE - DST_PIXEL_SIZE, by + DST_BLOCK_SIZE - DST_PIXEL_SIZE, 0.), DST_PIXEL_SIZE, DST_PIXEL_SIZE, Vec2::ZERO, 1., 1., pixel_color));
                     }
                 }
             }
@@ -173,17 +236,41 @@ impl Graphics {
                     let bx = piece.x as f32 + j as f32;
                     let by = piece.y as f32 + i as f32;
 
-                    state.queue_draw(rectangle(Vector3::new(bx, by, 0.), 1., 1., Vector2::new(0., 0.), 1., 1., wgpu::Color { r: 0., g: 0., b: 0., a: lerp(0.8, 0., piece.ticks_to_lock as f32 / 30.) as f64 }));
+                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., Vec2::new(0., 0.), 1., 1., wgpu::Color { r: 0., g: 0., b: 0., a: lerp(0.8, 0., piece.ticks_to_lock as f32 / 30.) as f64 }));
                 }
             }
         }
-
         state.do_draw(None)?;
 
         Ok(())
     }
     pub fn render(&self, well: &Well, piece: &Piece, state: &mut State) -> Result<(), String> {
+        state.set_camera(&Camera3D::default());
+        state.set_texture(None);
+
+        Graphics::queue_well_bg(state);
+
+        state.do_draw(Some(wgpu::Color { r: 0.05, g: 0.05, b: 0.1, a: 1.0 }))?;
+
         self.render_well(well, piece, state)?;
+
+        state.set_camera(&Camera3D::default());
+        state.set_texture(Some(self.well.0.clone()));
+
+        let well_width = WELL_COLS as f32;
+        let well_height = WELL_ROWS as f32;
+        state.queue_draw(
+            parallelogram(
+                Vec3::new(well_width / -2., well_height / -2., 0.),
+                well_width * Vec3::X,
+                well_height * Vec3::Y,
+                Vec2::ZERO,
+                Vec2::X,
+                Vec2::Y,
+                wgpu::Color::WHITE,
+            )
+        );
+        state.do_draw(None)?;
 
         state.present()?;
 

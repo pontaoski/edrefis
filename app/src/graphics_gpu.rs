@@ -43,6 +43,7 @@ const TILEMAP_HEIGHT: f32 = 1.;
 pub struct Graphics {
     tilemap: Rc<wgpu::BindGroup>,
     well: (Rc<wgpu::BindGroup>, Rc<wgpu::TextureView>),
+    next: (Rc<wgpu::BindGroup>, Rc<wgpu::TextureView>),
     score_buffer: glyphon::Buffer,
 }
 
@@ -52,12 +53,14 @@ impl Graphics {
 
         let tilemap = state.upload_texture(&png);
         let well = state.create_texture(WELL_COLS as u32 * 8, WELL_ROWS as u32 * 8);
+        let next = state.create_texture(4 * 8, 4 * 8);
         let mut buffer = state.create_buffer();
         Graphics::score_text(&mut buffer, state, 0, 0);
 
         Ok(Graphics {
             tilemap,
             well,
+            next,
             score_buffer: buffer,
         })
     }
@@ -146,7 +149,7 @@ impl Graphics {
     pub fn render_well(
         &self,
         well: &Well,
-        piece: &Piece,
+        piece: Option<&Piece>,
         state: &mut State,
     ) -> Result<(), String> {
         state.set_camera(&Camera2D::from_rect(Vec2::new(0., 0.), Vec2::new(WELL_COLS as f32, WELL_ROWS as f32), Some(self.well.1.clone())));
@@ -165,16 +168,18 @@ impl Graphics {
             }
         }
 
-        for (i, row) in piece.rotations.piece_map()[piece.rotation]
-            .iter()
-            .enumerate()
-        {
-            for (j, col) in row.iter().enumerate() {
-                if *col {
-                    let bx = piece.x as f32 + j as f32;
-                    let by = piece.y as f32 + i as f32;
+        if let Some(piece) = piece {
+            for (i, row) in piece.rotations.piece_map()[piece.rotation]
+                .iter()
+                .enumerate()
+            {
+                for (j, col) in row.iter().enumerate() {
+                    if *col {
+                        let bx = piece.x as f32 + j as f32;
+                        let by = piece.y as f32 + i as f32;
 
-                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(piece.color), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
+                        state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(piece.color), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
+                    }
                 }
             }
         }
@@ -254,16 +259,18 @@ impl Graphics {
             }
         }
 
-        for (i, row) in piece.rotations.piece_map()[piece.rotation]
-            .iter()
-            .enumerate()
-        {
-            for (j, col) in row.iter().enumerate() {
-                if *col {
-                    let bx = piece.x as f32 + j as f32;
-                    let by = piece.y as f32 + i as f32;
+        if let Some(piece) = piece {
+            for (i, row) in piece.rotations.piece_map()[piece.rotation]
+                .iter()
+                .enumerate()
+            {
+                for (j, col) in row.iter().enumerate() {
+                    if *col {
+                        let bx = piece.x as f32 + j as f32;
+                        let by = piece.y as f32 + i as f32;
 
-                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., Vec2::new(0., 0.), 1., 1., wgpu::Color { r: 0., g: 0., b: 0., a: lerp(0.8, 0., piece.ticks_to_lock as f32 / 30.) as f64 }));
+                        state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., Vec2::new(0., 0.), 1., 1., wgpu::Color { r: 0., g: 0., b: 0., a: lerp(0.8, 0., piece.ticks_to_lock as f32 / 30.) as f64 }));
+                    }
                 }
             }
         }
@@ -272,8 +279,32 @@ impl Graphics {
 
         Ok(())
     }
-    pub fn render(&mut self, field: &Field, well: &Well, piece: &Piece, state: &mut State) -> Result<(), String> {
+    pub fn render_next(&mut self, next: &Piece, state: &mut State) -> Result<(), String> {
+        state.set_camera(&Camera2D::from_rect(Vec2::new(0., 0.), Vec2::new(4., 4.), Some(self.next.1.clone())));
+
+        state.start_render_pass(Some(wgpu::Color::TRANSPARENT));
+        state.set_texture(Some(self.tilemap.clone()));
+        for (i, row) in next.rotations.piece_map()[next.rotation]
+            .iter()
+            .enumerate()
+        {
+            for (j, col) in row.iter().enumerate() {
+                if *col {
+                    let bx = j as f32;
+                    let by = i as f32;
+
+                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(next.color), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
+                }
+            }
+        }
+        state.do_draw()?;
+        state.complete_render_pass()?;
+
+        Ok(())
+    }
+    pub fn render(&mut self, field: &Field, well: &Well, piece: Option<&Piece>, next: &Piece, state: &mut State) -> Result<(), String> {
         self.render_well(well, piece, state)?;
+        self.render_next(next, state)?;
 
         state.set_camera(&Camera3D::default());
 
@@ -292,6 +323,21 @@ impl Graphics {
                 Vec3::new(well_width / -2., well_height / -2., 0.),
                 well_width * Vec3::X,
                 well_height * Vec3::Y,
+                Vec2::ZERO,
+                Vec2::X,
+                Vec2::Y,
+                wgpu::Color::WHITE,
+            )
+        );
+
+        state.do_draw()?;
+
+        state.set_texture(Some(self.next.0.clone()));
+        state.queue_draw(
+            parallelogram(
+                Vec3::new(4. / -2., 4. / -2. + well_height / 2. + 1.5, 0.),
+                4. * Vec3::X,
+                4. * Vec3::Y,
                 Vec2::ZERO,
                 Vec2::X,
                 Vec2::Y,

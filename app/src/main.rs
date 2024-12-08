@@ -172,10 +172,10 @@ fn main() -> Result<(), String> {
 
         match field.state {
             GameState::ActivePiece { piece } => {
-                graphics.render(&field, &field.well, &piece, &mut gpu_state)?;
+                graphics.render(&field, &field.well, Some(&piece), &field.next, &mut gpu_state)?;
             }
             _ => {
-                graphics.render(&field, &field.well, &field.next, &mut gpu_state)?;
+                graphics.render(&field, &field.well, None, &field.next, &mut gpu_state)?;
             }
         }
 

@@ -83,7 +83,7 @@ impl Graphics {
             ("Level\n", attrs.metrics(glyphon::Metrics::relative(24., 1.2))),
             (&format!("{}", level), attrs.metrics(glyphon::Metrics::relative(32., 1.2)).weight(glyphon::Weight::BOLD).color(glyphon::Color::rgba(255, 255, 255, 255))),
             (" /", attrs.metrics(glyphon::Metrics::relative(24., 1.2))),
-            ("100\n", attrs.metrics(glyphon::Metrics::relative(24., 1.2))),
+            (&format!("{}\n", ((level / 100) + 1) * 100), attrs.metrics(glyphon::Metrics::relative(24., 1.2))),
         ], attrs);
     }
     pub fn queue_well_bg(state: &mut State) {

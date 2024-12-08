@@ -392,7 +392,7 @@ impl State<'_> {
         let output = Rc::new(frame.texture.create_view(&wgpu::TextureViewDescriptor::default()));
 
         // Set up text renderer
-        let mut font_system = glyphon::FontSystem::new_with_fonts([
+        let font_system = glyphon::FontSystem::new_with_fonts([
             fontdb::Source::Binary(Arc::new(include_bytes!("font/HankenGrotesk-Bold.ttf"))),
             fontdb::Source::Binary(Arc::new(include_bytes!("font/HankenGrotesk-Medium.ttf"))),
         ]);
@@ -739,9 +739,6 @@ impl State<'_> {
     {
         buffer.set_rich_text(&mut self.font_system, spans, default_attrs, glyphon::Shaping::Advanced);
         buffer.shape_until_scroll(&mut self.font_system, false);
-    }
-    pub fn matrix(&self) -> Mat4 {
-        self.camera_matrix
     }
     pub fn world_to_view(&self, point: Vec3) -> Vec2 {
         let transformed = (self.camera_matrix.project_point3(point).xy() / Vec2::new(2., -2.)) + Vec2::new(0.5, 0.5);

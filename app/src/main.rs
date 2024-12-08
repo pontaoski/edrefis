@@ -7,7 +7,7 @@ use std::{collections::HashSet, time::Duration};
 use logic::{
     field::{Field, GameState},
     hooks::{Cubes, Sounds},
-    input::{Input, InputProvider, Inputs}, well::{WELL_COLS, WELL_ROWS},
+    input::{Input, InputProvider, Inputs}, well::WELL_COLS,
 };
 use sdl2::{self as sdl, event::WindowEvent};
 use sdl::{
@@ -17,7 +17,6 @@ use sdl::{
 use sounds::ClientSounds;
 
 mod sounds;
-mod text;
 mod gpu;
 mod graphics_gpu;
 
@@ -91,7 +90,6 @@ fn main() -> Result<(), String> {
     let video = ctx.video()?;
     // let timer = ctx.timer()?;
     let _audio = ctx.audio()?;
-    // let text_context = ttf::init().map_err(|e| e.to_string())?;
 
     let frequency = 44_100;
     let format = sdl::mixer::AUDIO_S16LSB;

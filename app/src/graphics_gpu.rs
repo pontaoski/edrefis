@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::rc::Rc;
-use glam::{Vec2, Vec3, Vec3Swizzles};
+use glam::{Vec2, Vec3};
 use logic::{field::{level_to_gravity, Field}, piece::Piece, well::{Block, Well, WELL_COLS, WELL_ROWS}};
 use sdl2::image::ImageRWops;
 use crate::{gpu::{parallelogram, rectangle, Camera2D, Camera3D, State}, lerp};

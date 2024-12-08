@@ -203,6 +203,8 @@ pub struct State<'a> {
     matrix_bind_group_layout: wgpu::BindGroupLayout,
     white_texture: Rc<wgpu::BindGroup>,
 
+    active_render_pass: Option<(wgpu::CommandEncoder, wgpu::RenderPass<'static>)>,
+
     camera_matrix: Mat4,
     camera_texture: Option<Rc<wgpu::TextureView>>,
     active_bind_group: Rc<wgpu::BindGroup>,
@@ -394,6 +396,8 @@ impl State<'_> {
 
             frame: Some(frame),
             frame_texture: Some(output),
+
+            active_render_pass: None,
 
             camera_matrix: Mat4::IDENTITY,
             camera_texture: None,
@@ -610,10 +614,46 @@ impl State<'_> {
         self.camera_matrix = camera.matrix(&self.config);
         self.camera_texture = camera.texture();
     }
-    pub fn do_draw(&mut self, clear: Option<wgpu::Color>) -> Result<(), String> {
+    pub fn start_render_pass(&mut self, clear: Option<wgpu::Color>) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("command_encoder"),
+            });
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: match &self.camera_texture {
+                    Some(texture) => &texture,
+                    None => &self.frame_texture.as_ref().unwrap(),
+                },
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: clear.map(wgpu::LoadOp::Clear).unwrap_or(wgpu::LoadOp::Load),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            label: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        }).forget_lifetime();
+        pass.set_pipeline(&self.render_pipeline);
+
+        self.active_render_pass = Some((encoder, pass));
+    }
+    pub fn complete_render_pass(&mut self) -> Result<(), String> {
+        let (encoder, render_pass) = std::mem::replace(&mut self.active_render_pass, None).ok_or("tried to complete a render pass without one being active")?;
+
+        drop(render_pass);
+        self.queue.submit(std::iter::once(encoder.finish()));
+        Ok(())
+    }
+    pub fn do_draw(&mut self) -> Result<(), String> {
         if self.vertices.is_empty() {
             return Ok(());
         }
+        let (_, ref mut render_pass) = self.active_render_pass.as_mut().ok_or("tried to draw without a render pass being active")?;
 
         let matrix = MatrixUniform::from(&self.camera_matrix);
 
@@ -646,39 +686,11 @@ impl State<'_> {
         });
         let num_indices = self.indices.len() as u32;
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("command_encoder"),
-            });
-
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: match &self.camera_texture {
-                    Some(texture) => &texture,
-                    None => &self.frame_texture.as_ref().unwrap(),
-                },
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: clear.map(wgpu::LoadOp::Clear).unwrap_or(wgpu::LoadOp::Load),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            label: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, self.active_bind_group.as_ref(), &[]);
         render_pass.set_bind_group(1, &matrix_bind_group, &[]);
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        // render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
         render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..num_indices, 0, 0..1);
-
-        drop(render_pass);
-        self.queue.submit(std::iter::once(encoder.finish()));
 
         self.vertices.clear();
         self.indices.clear();

@@ -121,6 +121,7 @@ impl Graphics {
         state: &mut State,
     ) -> Result<(), String> {
         state.set_camera(&Camera2D::from_rect(Vec2::new(0., 0.), Vec2::new(WELL_COLS as f32, WELL_ROWS as f32), Some(self.well.1.clone())));
+        state.start_render_pass(Some(wgpu::Color { r: 0., g: 0., b: 0., a: 0. }));
         state.set_texture(Some(self.tilemap.clone()));
 
         for (i, row) in well.blocks.iter().enumerate() {
@@ -148,7 +149,7 @@ impl Graphics {
             }
         }
 
-        state.do_draw(Some(wgpu::Color { r: 0., g: 0., b: 0., a: 0. }))?;
+        state.do_draw()?;
 
         state.set_texture(None);
 
@@ -236,21 +237,22 @@ impl Graphics {
                 }
             }
         }
-        state.do_draw(None)?;
+        state.do_draw()?;
+        state.complete_render_pass()?;
 
         Ok(())
     }
     pub fn render(&self, well: &Well, piece: &Piece, state: &mut State) -> Result<(), String> {
-        state.set_camera(&Camera3D::default());
-        state.set_texture(None);
-
-        Graphics::queue_well_bg(state);
-
-        state.do_draw(Some(wgpu::Color { r: 0.05, g: 0.05, b: 0.1, a: 1.0 }))?;
-
         self.render_well(well, piece, state)?;
 
         state.set_camera(&Camera3D::default());
+
+        state.start_render_pass(Some(wgpu::Color { r: 0.05, g: 0.05, b: 0.1, a: 1.0 }));
+        state.set_texture(None);
+
+        Graphics::queue_well_bg(state);
+        state.do_draw()?;
+
         state.set_texture(Some(self.well.0.clone()));
 
         let well_width = WELL_COLS as f32;
@@ -266,7 +268,8 @@ impl Graphics {
                 wgpu::Color::WHITE,
             )
         );
-        state.do_draw(None)?;
+        state.do_draw()?;
+        state.complete_render_pass()?;
 
         state.present()?;
 

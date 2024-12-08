@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::rc::Rc;
-use glam::{Vec2, Vec3};
-use logic::{piece::Piece, well::{Block, Well, WELL_COLS, WELL_ROWS}};
+use glam::{Vec2, Vec3, Vec3Swizzles};
+use logic::{field::{level_to_gravity, Field}, piece::Piece, well::{Block, Well, WELL_COLS, WELL_ROWS}};
 use sdl2::image::ImageRWops;
 use crate::{gpu::{parallelogram, rectangle, Camera2D, Camera3D, State}, lerp};
 
@@ -43,19 +43,48 @@ const TILEMAP_HEIGHT: f32 = 1.;
 pub struct Graphics {
     tilemap: Rc<wgpu::BindGroup>,
     well: (Rc<wgpu::BindGroup>, Rc<wgpu::TextureView>),
+    score_buffer: glyphon::Buffer,
 }
 
 impl Graphics {
-    pub fn new(state: &State) -> Result<Graphics, String> {
+    pub fn new(state: &mut State) -> Result<Graphics, String> {
         let png = sdl2::rwops::RWops::from_bytes(include_bytes!("gfx/tiles.png"))?.load_png()?;
 
         let tilemap = state.upload_texture(&png);
         let well = state.create_texture(WELL_COLS as u32 * 8, WELL_ROWS as u32 * 8);
+        let mut buffer = state.create_buffer();
+        Graphics::score_text(&mut buffer, state, 0, 0);
 
         Ok(Graphics {
             tilemap,
             well,
+            score_buffer: buffer,
         })
+    }
+    pub fn score_text(buffer: &mut glyphon::Buffer, state: &mut State, gravity: i32, level: u32) {
+        let attrs = glyphon::Attrs::new().family(glyphon::Family::Name("Hanken Grotesk")).weight(glyphon::Weight::MEDIUM).color(glyphon::Color::rgba(255, 255, 255, 180));
+
+        let is_20g = gravity >= 256;
+        let gravity_amount = if !is_20g {
+            gravity / 2
+        } else {
+            gravity / 256
+        };
+
+        state.set_buffer_text(buffer, [
+            ("Gravity\n", attrs.metrics(glyphon::Metrics::relative(24., 1.2))),
+            (&format!("{}", gravity_amount), attrs.metrics(glyphon::Metrics::relative(32., 1.2)).weight(glyphon::Weight::BOLD).color(glyphon::Color::rgba(255, 255, 255, 255))),
+            if is_20g {
+                ("G", attrs.metrics(glyphon::Metrics::relative(32., 1.2)))
+            } else {
+                (" /128", attrs.metrics(glyphon::Metrics::relative(24., 1.2)))
+            },
+            ("\n", attrs),
+            ("Level\n", attrs.metrics(glyphon::Metrics::relative(24., 1.2))),
+            (&format!("{}", level), attrs.metrics(glyphon::Metrics::relative(32., 1.2)).weight(glyphon::Weight::BOLD).color(glyphon::Color::rgba(255, 255, 255, 255))),
+            (" /", attrs.metrics(glyphon::Metrics::relative(24., 1.2))),
+            ("100\n", attrs.metrics(glyphon::Metrics::relative(24., 1.2))),
+        ], attrs);
     }
     pub fn queue_well_bg(state: &mut State) {
         let well_width = WELL_COLS as f32;
@@ -122,6 +151,7 @@ impl Graphics {
     ) -> Result<(), String> {
         state.set_camera(&Camera2D::from_rect(Vec2::new(0., 0.), Vec2::new(WELL_COLS as f32, WELL_ROWS as f32), Some(self.well.1.clone())));
         state.start_render_pass(Some(wgpu::Color { r: 0., g: 0., b: 0., a: 0. }));
+
         state.set_texture(Some(self.tilemap.clone()));
 
         for (i, row) in well.blocks.iter().enumerate() {
@@ -242,7 +272,7 @@ impl Graphics {
 
         Ok(())
     }
-    pub fn render(&self, well: &Well, piece: &Piece, state: &mut State) -> Result<(), String> {
+    pub fn render(&mut self, field: &Field, well: &Well, piece: &Piece, state: &mut State) -> Result<(), String> {
         self.render_well(well, piece, state)?;
 
         state.set_camera(&Camera3D::default());
@@ -269,6 +299,11 @@ impl Graphics {
             )
         );
         state.do_draw()?;
+
+        let point = state.world_to_view(Vec3::new(well_width / 2. + 1., well_height / 2., 0.));
+        Graphics::score_text(&mut self.score_buffer, state, level_to_gravity(field.level), field.level);
+        state.draw_text(&mut self.score_buffer, point)?;
+
         state.complete_render_pass()?;
 
         state.present()?;

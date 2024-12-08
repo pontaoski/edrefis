@@ -49,10 +49,6 @@ impl InputProvider for ReplayInputProvider {
     fn key_down(&self, input: Input) -> bool {
         self.keys.contains(&input)
     }
-
-    fn as_any(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
 }
 
 #[derive(SerJson, DeJson)]

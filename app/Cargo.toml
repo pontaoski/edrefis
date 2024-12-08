@@ -16,3 +16,5 @@ pollster = "0.4.0"
 bytemuck = { version = "1.19.0", features = ["derive"] }
 # cgmath = "0.18.0"
 glam = "0.29.2"
+glyphon = "0.7.0"
+cosmic-text = { version = "0.12", features = ["std", "swash", "vi"], default-features = false }

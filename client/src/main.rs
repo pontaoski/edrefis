@@ -339,9 +339,6 @@ impl InputProvider for NetworkInputProvider {
     fn key_down(&self, input: Input) -> bool {
         self.current.contains(&input)
     }
-    fn as_any(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
 }
 
 impl Updater for Game {

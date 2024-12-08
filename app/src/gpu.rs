@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 // use cgmath::{perspective, Deg, Matrix4, Point3, Rad, SquareMatrix, Vector2, Vector3, Vector4, Zero};
-use std::{borrow::Cow, rc::Rc};
-use glam::{Mat4, Vec2, Vec3};
+use std::{borrow::Cow, rc::Rc, sync::Arc};
+use glam::{Mat4, Vec2, Vec3, Vec3Swizzles};
+use glyphon::fontdb;
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -205,6 +206,12 @@ pub struct State<'a> {
 
     active_render_pass: Option<(wgpu::CommandEncoder, wgpu::RenderPass<'static>)>,
 
+    font_system: glyphon::FontSystem,
+    swash_cache: glyphon::SwashCache,
+    viewport: glyphon::Viewport,
+    atlas: glyphon::TextAtlas,
+    text_renderer: glyphon::TextRenderer,
+
     camera_matrix: Mat4,
     camera_texture: Option<Rc<wgpu::TextureView>>,
     active_bind_group: Rc<wgpu::BindGroup>,
@@ -384,6 +391,18 @@ impl State<'_> {
         let frame = surface.get_current_texture().map_err(|e| e.to_string())?;
         let output = Rc::new(frame.texture.create_view(&wgpu::TextureViewDescriptor::default()));
 
+        // Set up text renderer
+        let mut font_system = glyphon::FontSystem::new_with_fonts([
+            fontdb::Source::Binary(Arc::new(include_bytes!("font/HankenGrotesk-Bold.ttf"))),
+            fontdb::Source::Binary(Arc::new(include_bytes!("font/HankenGrotesk-Medium.ttf"))),
+        ]);
+        let swash_cache = glyphon::SwashCache::new();
+        let cache = glyphon::Cache::new(&device);
+        let viewport = glyphon::Viewport::new(&device, &cache);
+        let mut atlas = glyphon::TextAtlas::new(&device, &queue, &cache, wgpu::TextureFormat::Bgra8UnormSrgb);
+        let text_renderer =
+            glyphon::TextRenderer::new(&mut atlas, &device, wgpu::MultisampleState::default(), None);
+
         Ok(State {
             surface,
             device,
@@ -398,6 +417,12 @@ impl State<'_> {
             frame_texture: Some(output),
 
             active_render_pass: None,
+
+            font_system,
+            swash_cache,
+            viewport,
+            atlas,
+            text_renderer,
 
             camera_matrix: Mat4::IDENTITY,
             camera_texture: None,
@@ -694,6 +719,68 @@ impl State<'_> {
 
         self.vertices.clear();
         self.indices.clear();
+
+        Ok(())
+    }
+    pub fn create_buffer(&mut self) -> glyphon::Buffer {
+        let mut text_buffer = glyphon::Buffer::new(&mut self.font_system, glyphon::Metrics::new(30.0, 42.0));
+
+        text_buffer.set_size(&mut self.font_system, None, None);
+
+        text_buffer
+    }
+    pub fn set_buffer_text<'r, 's, I>(
+        &mut self,
+        buffer: &mut glyphon::Buffer,
+        spans: I,
+        default_attrs: glyphon::Attrs,
+    ) where
+        I: IntoIterator<Item = (&'s str, glyphon::Attrs<'r>)>
+    {
+        buffer.set_rich_text(&mut self.font_system, spans, default_attrs, glyphon::Shaping::Advanced);
+        buffer.shape_until_scroll(&mut self.font_system, false);
+    }
+    pub fn matrix(&self) -> Mat4 {
+        self.camera_matrix
+    }
+    pub fn world_to_view(&self, point: Vec3) -> Vec2 {
+        let transformed = (self.camera_matrix.project_point3(point).xy() / Vec2::new(2., -2.)) + Vec2::new(0.5, 0.5);
+        let screen_size = Vec2::new(self.config.width as f32, self.config.height as f32);
+
+        transformed * screen_size
+    }
+    pub fn draw_text(&mut self, buffer: &mut glyphon::Buffer, point: Vec2) -> Result<(), String> {
+        self.viewport.update(&self.queue, glyphon::Resolution {
+            width: self.config.width,
+            height: self.config.height,
+        });
+        self.text_renderer
+            .prepare(
+                &mut self.device,
+                &mut self.queue,
+                &mut self.font_system,
+                &mut self.atlas,
+                &mut self.viewport,
+                [glyphon::TextArea {
+                    buffer,
+                    left: point.x,
+                    top: point.y,
+                    scale: 1.0,
+                    bounds: glyphon::TextBounds {
+                        left: 0,
+                        top: 0,
+                        right: self.config.width as i32,
+                        bottom: self.config.height as i32,
+                    },
+                    default_color: glyphon::Color::rgb(255, 255, 255),
+                    custom_glyphs: &[],
+                }],
+                &mut self.swash_cache,
+            ).map_err(|e| e.to_string())?;
+
+        let (_, ref mut render_pass) = self.active_render_pass.as_mut().ok_or("tried to draw without a render pass being active")?;
+
+        self.text_renderer.render(&self.atlas, &self.viewport, render_pass).map_err(|e| e.to_string())?;
 
         Ok(())
     }

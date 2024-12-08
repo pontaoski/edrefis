@@ -101,7 +101,7 @@ fn main() -> Result<(), String> {
     sdl::mixer::allocate_channels(4);
 
     let window = video
-        .window("Edrefis", WELL_COLS as u32 * 40, WELL_ROWS as u32 * 40)
+        .window("Edrefis", WELL_COLS as u32 * 60, WELL_COLS as u32 * 60)
         .position_centered()
         .resizable()
         .metal_view()
@@ -109,7 +109,7 @@ fn main() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let mut gpu_state = pollster::block_on(gpu::State::new(&window))?;
-    let graphics = graphics_gpu::Graphics::new(&gpu_state)?;
+    let mut graphics = graphics_gpu::Graphics::new(&mut gpu_state)?;
 
     let mut field = Field::new();
     let mut input_provider = SDLInputs::new();
@@ -172,10 +172,10 @@ fn main() -> Result<(), String> {
 
         match field.state {
             GameState::ActivePiece { piece } => {
-                graphics.render(&field.well, &piece, &mut gpu_state)?;
+                graphics.render(&field, &field.well, &piece, &mut gpu_state)?;
             }
             _ => {
-                graphics.render(&field.well, &field.next, &mut gpu_state)?;
+                graphics.render(&field, &field.well, &field.next, &mut gpu_state)?;
             }
         }
 

@@ -3,9 +3,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::rc::Rc;
-
 use glam::{Vec2, Vec3};
-// use cgmath::{Point3, Vector2, Vector3, Zero};
 use logic::{piece::Piece, well::{Block, Well, WELL_COLS, WELL_ROWS}};
 use sdl2::image::ImageRWops;
 use crate::{gpu::{parallelogram, rectangle, Camera2D, Camera3D, State}, lerp};
@@ -23,17 +21,17 @@ fn texture_index(block: Block) -> i32 {
 }
 
 
-fn color(block: Block) -> wgpu::Color {
-    match block {
-    Block::Red => wgpu::Color { r: 1.0, g: 0.0, b: 0.18823529411764706, a: 1.0 },
-    Block::Orange => wgpu::Color { r: 1.0, g: 0.4392156862745098, b: 0.0, a: 1.0 },
-    Block::Yellow => wgpu::Color { r: 1.0, g: 0.7647058823529411, b: 0.0, a: 1.0 },
-    Block::Green => wgpu::Color { r: 0.4588235294117647, g: 0.9333333333333333, b: 0.2235294117647059, a: 1.0 },
-    Block::Cyan => wgpu::Color { r: 0.0, g: 0.9411764705882353, b: 0.8274509803921568, a: 1.0 },
-    Block::Blue => wgpu::Color { r: 0.25098039215686274, g: 0.6235294117647059, b: 0.9725490196078431, a: 1.0 },
-    Block::Purple => wgpu::Color { r: 0.7137254901960784, g: 0.47058823529411764, b: 0.9607843137254902, a: 1.0 },
-    }
-}
+// fn color(block: Block) -> wgpu::Color {
+//     match block {
+//     Block::Red => wgpu::Color { r: 1.0, g: 0.0, b: 0.18823529411764706, a: 1.0 },
+//     Block::Orange => wgpu::Color { r: 1.0, g: 0.4392156862745098, b: 0.0, a: 1.0 },
+//     Block::Yellow => wgpu::Color { r: 1.0, g: 0.7647058823529411, b: 0.0, a: 1.0 },
+//     Block::Green => wgpu::Color { r: 0.4588235294117647, g: 0.9333333333333333, b: 0.2235294117647059, a: 1.0 },
+//     Block::Cyan => wgpu::Color { r: 0.0, g: 0.9411764705882353, b: 0.8274509803921568, a: 1.0 },
+//     Block::Blue => wgpu::Color { r: 0.25098039215686274, g: 0.6235294117647059, b: 0.9725490196078431, a: 1.0 },
+//     Block::Purple => wgpu::Color { r: 0.7137254901960784, g: 0.47058823529411764, b: 0.9607843137254902, a: 1.0 },
+//     }
+// }
 
 fn tilemap_position(block: Block) -> Vec2 {
     Vec2::new(texture_index(block) as f32 * 1. / 12., 0.)
@@ -62,8 +60,6 @@ impl Graphics {
     pub fn queue_well_bg(state: &mut State) {
         let well_width = WELL_COLS as f32;
         let well_height = WELL_ROWS as f32;
-        let line_thickness: f32 = 1. / 8.;
-        let outline = wgpu::Color { r: 0.77625, g: 0.96804, b: 1.00513, a: 0.2 };
         let wall = wgpu::Color { r: 0.77625, g: 0.96804, b: 1.00513, a: 0.1 };
 
         // well bg

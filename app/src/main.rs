@@ -2,25 +2,20 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{borrow::Cow, collections::{HashMap, HashSet}, time::Duration};
+use std::{collections::HashSet, time::Duration};
 
-use graphics::Graphics;
 use logic::{
     field::{Field, GameState},
     hooks::{Cubes, Sounds},
     input::{Input, InputProvider, Inputs}, well::{WELL_COLS, WELL_ROWS},
 };
-use sdl2::{self as sdl, event::WindowEvent, image::ImageRWops};
+use sdl2::{self as sdl, event::WindowEvent};
 use sdl::{
     event::Event,
     keyboard::Keycode,
-    pixels::Color,
-    ttf,
 };
 use sounds::ClientSounds;
-use text::Text;
 
-mod graphics;
 mod sounds;
 mod text;
 mod gpu;
@@ -96,7 +91,7 @@ fn main() -> Result<(), String> {
     let video = ctx.video()?;
     // let timer = ctx.timer()?;
     let _audio = ctx.audio()?;
-    let text_context = ttf::init().map_err(|e| e.to_string())?;
+    // let text_context = ttf::init().map_err(|e| e.to_string())?;
 
     let frequency = 44_100;
     let format = sdl::mixer::AUDIO_S16LSB;
@@ -113,9 +108,8 @@ fn main() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let (width, height) = window.size();
     let mut gpu_state = pollster::block_on(gpu::State::new(&window))?;
-    let mut graphics = graphics_gpu::Graphics::new(&gpu_state)?;
+    let graphics = graphics_gpu::Graphics::new(&gpu_state)?;
 
     let mut field = Field::new();
     let mut input_provider = SDLInputs::new();
@@ -124,7 +118,6 @@ fn main() -> Result<(), String> {
     let mut event_pump = ctx.event_pump()?;
     let mut sounds = ClientSounds::new()?;
     let mut cubes = DummyImpl {};
-    let mut text = Text::new(&text_context)?;
 
     let mut ticks = 0u64;
 
@@ -185,36 +178,6 @@ fn main() -> Result<(), String> {
                 graphics.render(&field.well, &field.next, &mut gpu_state)?;
             }
         }
-
-        // canvas.set_draw_color(Color::RGB(255, 255, 255));
-        // canvas.clear();
-
-        // graphics.draw_background(&mut canvas)?;
-
-        // Graphics::well_viewport(&mut canvas, |canvas| {
-        //     graphics.draw_well_background(canvas)?;
-        //     graphics.draw_well(canvas, &field.well)?;
-        //     graphics.draw_outlines(canvas, &field.well)?;
-
-        //     match field.state {
-        //         GameState::ActivePiece { piece } => {
-        //             graphics.draw_piece(canvas, &piece, lerp(102., 0., piece.ticks_to_lock as f32 / 30.) as u8)?;
-        //         }
-        //         GameState::PlaceDelay { .. } | GameState::ClearDelay { .. } => {
-        //         }
-        //         GameState::GameOver { .. } => {
-        //             graphics.draw_piece(canvas, &field.next, 50)?;
-        //         }
-        //     }
-        //     Ok(())
-        // })?;
-        // Graphics::well_side_viewport(&mut canvas, |canvas| {
-        //     let mut texture_creator = canvas.texture_creator();
-        //     text.draw_text(canvas, &mut texture_creator, "meow", 1, 1, text::Weight::Bold, Color::WHITE)?;
-        //     Ok(())
-        // })?;
-
-        // canvas.present();
 
         std::thread::sleep(Duration::from_millis(15));
     }

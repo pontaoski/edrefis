@@ -203,8 +203,6 @@ pub struct State<'a> {
     matrix_bind_group_layout: wgpu::BindGroupLayout,
     white_texture: Rc<wgpu::BindGroup>,
 
-    window: &'a sdl2::video::Window,
-
     camera_matrix: Mat4,
     camera_texture: Option<Rc<wgpu::TextureView>>,
     active_bind_group: Rc<wgpu::BindGroup>,
@@ -392,7 +390,6 @@ impl State<'_> {
             render_pipeline,
             texture_bind_group_layout,
             matrix_bind_group_layout,
-            window,
             white_texture: white_texture.clone(),
 
             frame: Some(frame),
@@ -690,7 +687,7 @@ impl State<'_> {
     }
     pub fn present(&mut self) -> Result<(), String> {
         let frame = std::mem::replace(&mut self.frame, None).unwrap();
-        let output = std::mem::replace(&mut self.frame_texture, None).unwrap();
+        let _output = std::mem::replace(&mut self.frame_texture, None).unwrap();
 
         frame.present();
 

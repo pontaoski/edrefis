@@ -138,7 +138,7 @@ impl Field {
 
                         for (y, row) in &cleared_rows {
                             for (x, col) in row.iter().rev().enumerate() {
-                                cubes.spawn_cube(x as i32, *y as i32, col.unwrap());
+                                cubes.spawn_cube(x as i32, *y as i32, col.unwrap().color);
                             }
                         }
 

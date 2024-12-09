@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 use glam::{Vec2, Vec3};
-use logic::{field::{level_to_gravity, Field}, piece::Piece, well::{Block, Well, WELL_COLS, WELL_ROWS}};
+use logic::{field::{level_to_gravity, Field}, piece::Piece, well::{Block, BlockDirections, Well, WELL_COLS, WELL_ROWS}};
 use sdl2::image::ImageRWops;
 use crate::{gpu::{parallelogram, rectangle, Camera2D, Camera3D, State}, lerp};
 
@@ -33,12 +33,12 @@ fn texture_index(block: Block) -> i32 {
 //     }
 // }
 
-fn tilemap_position(block: Block) -> Vec2 {
-    Vec2::new(texture_index(block) as f32 * 1. / 12., 0.)
+fn tilemap_position(block: Block, directions: BlockDirections) -> Vec2 {
+    Vec2::new(directions.bits() as f32 * TILEMAP_WIDTH, texture_index(block) as f32 * 1. / 8.)
 }
 
-const TILEMAP_WIDTH: f32 = 1. / 12.;
-const TILEMAP_HEIGHT: f32 = 1.;
+const TILEMAP_WIDTH: f32 = 1. / 16.;
+const TILEMAP_HEIGHT: f32 = 1. / 8.;
 
 pub struct Graphics {
     tilemap: Rc<wgpu::BindGroup>,
@@ -146,6 +146,42 @@ impl Graphics {
             )
         );
     }
+    pub fn queue_piece(
+        &self,
+        piece: &Piece,
+        respect_position: bool,
+        state: &mut State,
+    ) {
+        let rotation = piece.rotations.piece_map()[piece.rotation];
+        for (i, row) in rotation.iter().enumerate()
+        {
+            for (j, col) in row.iter().enumerate() {
+                if *col {
+                    let bx = if respect_position { piece.x as f32 } else { 0. } + j as f32;
+                    let by = if respect_position { piece.y as f32 } else { 0. } + i as f32;
+
+                    let check = |dx: i32, dy: i32| {
+                        let row_idx = i as i32+dy;
+                        let col_idx = j as i32+dx;
+                        if row_idx < 0 || col_idx < 0 {
+                            false
+                        } else if row_idx as usize >= rotation.len() || col_idx as usize >= row.len() {
+                            false
+                        } else {
+                            rotation[row_idx as usize][col_idx as usize] != false
+                        }
+                    };
+
+                    let up = check(0, -1);
+                    let down = check(0, 1);
+                    let left = check(-1, 0);
+                    let right = check(1, 0);
+
+                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(piece.color, BlockDirections::new(up, down, left, right)), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
+                }
+            }
+        }
+    }
     pub fn render_well(
         &self,
         well: &Well,
@@ -163,25 +199,30 @@ impl Graphics {
                     let bx = j as f32;
                     let by = i as f32;
 
-                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(*block), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
+                    let fetch = |dx: i32, dy: i32| {
+                        let row_idx = i as i32+dy;
+                        let col_idx = j as i32+dx;
+                        if row_idx < 0 || col_idx < 0 {
+                            None
+                        } else if row_idx as usize >= WELL_ROWS || col_idx as usize >= WELL_COLS {
+                            None
+                        } else {
+                            well.blocks[row_idx as usize][col_idx as usize].filter(|it| it.color == block.color).map(|it| it.directions)
+                        }
+                    };
+
+                    let up = fetch(0, -1);
+                    let down = fetch(0, 1);
+                    let left = fetch(-1, 0);
+                    let right = fetch(1, 0);
+
+                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(block.color, block.directions.match_with(up, down, left, right)), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
                 }
             }
         }
 
         if let Some(piece) = piece {
-            for (i, row) in piece.rotations.piece_map()[piece.rotation]
-                .iter()
-                .enumerate()
-            {
-                for (j, col) in row.iter().enumerate() {
-                    if *col {
-                        let bx = piece.x as f32 + j as f32;
-                        let by = piece.y as f32 + i as f32;
-
-                        state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(piece.color), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
-                    }
-                }
-            }
+            self.queue_piece(piece, true, state);
         }
 
         state.do_draw()?;
@@ -284,19 +325,7 @@ impl Graphics {
 
         state.start_render_pass(Some(wgpu::Color::TRANSPARENT));
         state.set_texture(Some(self.tilemap.clone()));
-        for (i, row) in next.rotations.piece_map()[next.rotation]
-            .iter()
-            .enumerate()
-        {
-            for (j, col) in row.iter().enumerate() {
-                if *col {
-                    let bx = j as f32;
-                    let by = i as f32;
-
-                    state.queue_draw(rectangle(Vec3::new(bx, by, 0.), 1., 1., tilemap_position(next.color), TILEMAP_WIDTH, TILEMAP_HEIGHT, wgpu::Color::WHITE));
-                }
-            }
-        }
+        self.queue_piece(next, false, state);
         state.do_draw()?;
         state.complete_render_pass()?;
 

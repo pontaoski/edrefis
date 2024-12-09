@@ -73,7 +73,7 @@ impl Graphics {
                 if let Some(block) = col {
                     let bx = j as f32 * DST_BLOCK_SIZE;
                     let by = i as f32 * DST_BLOCK_SIZE;
-                    self.draw_block_at(bx, by, if greyscale { 7 } else { texture_index(*block) });
+                    self.draw_block_at(bx, by, if greyscale { 7 } else { texture_index(block.color) });
                     draw_rectangle(bx, by, DST_BLOCK_SIZE, DST_BLOCK_SIZE, Color::new(0., 0., 0., 0.2));
                 }
             }

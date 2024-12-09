@@ -7,7 +7,7 @@ use std::cmp::max;
 use nanoserde::{DeJson, SerJson};
 
 use crate::hooks::Sounds;
-use crate::well::{Block, Well, WELL_COLS, WELL_ROWS};
+use crate::well::{Block, BlockDirections, Tile, Well, WELL_COLS, WELL_ROWS};
 use crate::input::{Input, Inputs};
 
 #[derive(Copy, Clone, Debug, SerJson, DeJson)]
@@ -203,7 +203,24 @@ impl Piece {
         for (ri, row) in current.iter().enumerate() {
             for (ci, col) in row.iter().enumerate() {
                 if *col {
-                    well.blocks[(self.y+ri as i32) as usize][(self.x+ci as i32) as usize] = Some(self.color);
+                    let check = |dx: i32, dy: i32| {
+                        let row_idx = ri as i32+dy;
+                        let col_idx = ci as i32+dx;
+                        if row_idx < 0 || col_idx < 0 {
+                            false
+                        } else if row_idx as usize >= current.len() || col_idx as usize >= row.len() {
+                            false
+                        } else {
+                            current[row_idx as usize][col_idx as usize] != false
+                        }
+                    };
+
+                    let up = check(0, -1);
+                    let down = check(0, 1);
+                    let left = check(-1, 0);
+                    let right = check(1, 0);
+
+                    well.blocks[(self.y+ri as i32) as usize][(self.x+ci as i32) as usize] = Some(Tile { color: self.color, directions: BlockDirections::new(up, down, left, right) });
                 }
             }
         }

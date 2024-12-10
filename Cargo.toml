@@ -6,6 +6,7 @@
 members = [ "app",
     "client",
     "logic",
+    "nanotime",
     "server",
 ]
 resolver = "2"

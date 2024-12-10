@@ -10,6 +10,7 @@ edition = "2021"
 [dependencies]
 sdl2 = { version = "0.37.0", features = ["image", "ttf", "mixer", "raw-window-handle"] }
 logic = { path = "../logic" }
+nanotime = { path = "../nanotime" }
 sdl3 = { version = "0", features = ["build-from-source-static"] }
 wgpu = { version = "23.0.0", features = ["webgl"] }
 pollster = "0.4.0"

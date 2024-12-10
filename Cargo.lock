@@ -44,6 +44,7 @@ dependencies = [
  "glam 0.29.2",
  "glyphon",
  "logic",
+ "nanotime",
  "pollster",
  "sdl2",
  "sdl3",
@@ -1070,6 +1071,10 @@ name = "nanoserde-derive"
 version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e943b2c21337b7e3ec6678500687cdc741b7639ad457f234693352075c082204"
+
+[[package]]
+name = "nanotime"
+version = "0.1.0"
 
 [[package]]
 name = "ndk-sys"

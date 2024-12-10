@@ -119,6 +119,8 @@ fn main() -> Result<(), String> {
 
     let mut ticks = 0u64;
 
+    let mut stepper = nanotime::StepData::new(Duration::from_secs_f64(1. / 60.));
+
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -177,7 +179,7 @@ fn main() -> Result<(), String> {
             }
         }
 
-        std::thread::sleep(Duration::from_millis(15));
+        stepper.step();
     }
 
     Ok(())

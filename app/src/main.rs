@@ -171,7 +171,7 @@ fn main() -> Result<(), String> {
         field.update(&mut inputs, &mut sounds, &mut cubes);
 
         match field.state {
-            GameState::ActivePiece { piece } => {
+            GameState::ActivePiece { piece, .. } => {
                 graphics.render(&field, &field.well, Some(&piece), &field.next, &mut gpu_state)?;
             }
             _ => {

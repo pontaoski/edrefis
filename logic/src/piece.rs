@@ -139,8 +139,8 @@ impl Piece {
             }
         }
     }
-    pub fn do_gravity(&mut self, well: &Well, inputs: &Inputs, rate: i32, sound: &mut dyn Sounds) {
-        if inputs.key_pressed(Input::Down) {
+    pub fn do_gravity(&mut self, well: &Well, inputs: &Inputs, rate: i32, sound: &mut dyn Sounds, inputs_active: bool) {
+        if inputs.key_pressed(Input::Down) && inputs_active {
             self.ticks_to_next_gravity -= max(rate, 256);
         } else {
             self.ticks_to_next_gravity -= rate;

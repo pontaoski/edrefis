@@ -10,7 +10,6 @@ use crate::{hooks::{Cubes, Sounds}, input::{Input, Inputs}, piece::Piece, random
 pub enum GameState {
     ActivePiece {
         piece: Piece,
-        first_frame: bool,
     },
     ClearDelay {
         ticks_remaining: i32,
@@ -110,7 +109,6 @@ impl Field {
             level: 0,
             state: GameState::ActivePiece {
                 piece: randomizer.next_piece(),
-                first_frame: true,
             },
 
             randomizer,
@@ -118,19 +116,16 @@ impl Field {
     }
     pub fn update(&mut self, inputs: &Inputs, sounds: &mut dyn Sounds, cubes: &mut dyn Cubes) {
         match self.state {
-            GameState::ActivePiece { ref mut piece, ref mut first_frame } => {
+            GameState::ActivePiece { ref mut piece } => {
                 piece.do_sonic(&self.well, inputs);
                 piece.do_rotate(&self.well, inputs);
-                if !*first_frame {
-                    piece.do_horizontal(&self.well, inputs);
-                } else {
-                    *first_frame = false;
-                }
+                piece.do_horizontal(&self.well, inputs);
                 piece.do_gravity(
                     &self.well,
                     inputs,
                     level_to_gravity(self.level),
                     sounds,
+                    true,
                 );
 
                 if piece.do_lock(&mut self.well, inputs, sounds) {
@@ -188,10 +183,17 @@ impl Field {
                     if self.next.collides_with(&self.well, 0, 0, self.next.rotation) {
                         self.state = GameState::GameOver { ticks_remaining: 60 * 5  };
                     } else {
-                        self.state = GameState::ActivePiece { piece: self.next, first_frame: true };
+                        self.next.do_gravity(
+                            &self.well,
+                            inputs,
+                            level_to_gravity(self.level),
+                            sounds,
+                            false,
+                        );
+                        self.state = GameState::ActivePiece { piece: self.next };
                         self.next = self.randomizer.next_piece();
                         sounds.block_spawn(self.next.color);
-                        self.update(inputs, sounds, cubes);
+
                     }
                 }
             }
@@ -204,7 +206,6 @@ impl Field {
                     self.next = randomizer.next_piece();
                     self.state = GameState::ActivePiece {
                         piece: randomizer.next_piece(),
-                        first_frame: true,
                     };
                     self.randomizer = randomizer;
                     self.level = 0;

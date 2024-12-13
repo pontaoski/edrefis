@@ -9,10 +9,12 @@ use logic::{
     hooks::{Cubes, Sounds},
     input::{Input, InputProvider, Inputs}, well::WELL_COLS,
 };
-use sdl2::{self as sdl, event::WindowEvent};
+use sdl2::{self as sdl};
 use sdl::{
     event::Event,
     keyboard::Keycode,
+    controller::Button,
+    event::WindowEvent,
 };
 use sounds::ClientSounds;
 
@@ -33,8 +35,10 @@ impl Sounds for DummyImpl {
 }
 
 struct SDLInputs {
-    just_pressed: HashSet<Keycode>,
-    current: HashSet<Keycode>,
+    just_pressed_key: HashSet<Keycode>,
+    current_key: HashSet<Keycode>,
+    just_pressed_btn: HashSet<Button>,
+    current_btn: HashSet<Button>,
 }
 
 fn input_to_sdl_key(keycode: Input) -> Keycode {
@@ -47,21 +51,41 @@ fn input_to_sdl_key(keycode: Input) -> Keycode {
         Input::CCW => Keycode::Z,
     }
 }
+fn input_to_sdl_btn(keycode: Input) -> Button {
+    match keycode {
+        Input::Up => Button::DPadUp,
+        Input::Down => Button::DPadDown,
+        Input::Left => Button::DPadLeft,
+        Input::Right => Button::DPadRight,
+        Input::CW => Button::A,
+        Input::CCW => Button::B,
+    }
+}
 
 impl SDLInputs {
     fn new() -> SDLInputs {
         SDLInputs {
-            just_pressed: HashSet::new(),
-            current: HashSet::new(),
+            just_pressed_key: HashSet::new(),
+            current_key: HashSet::new(),
+            just_pressed_btn: HashSet::new(),
+            current_btn: HashSet::new(),
         }
     }
     fn push_key(&mut self, keycode: Keycode) {
-        self.just_pressed.insert(keycode);
-        self.current.insert(keycode);
+        self.just_pressed_key.insert(keycode);
+        self.current_key.insert(keycode);
     }
     fn release_key(&mut self, keycode: Keycode) {
-        self.just_pressed.remove(&keycode);
-        self.current.remove(&keycode);
+        self.just_pressed_key.remove(&keycode);
+        self.current_key.remove(&keycode);
+    }
+    fn push_btn(&mut self, button: Button) {
+        self.just_pressed_btn.insert(button);
+        self.current_btn.insert(button);
+    }
+    fn release_btn(&mut self, button: Button) {
+        self.just_pressed_btn.remove(&button);
+        self.current_btn.remove(&button);
     }
 }
 
@@ -69,15 +93,16 @@ impl InputProvider for SDLInputs {
     fn peek(&mut self) {}
 
     fn consume(&mut self) {
-        self.just_pressed.clear();
+        self.just_pressed_key.clear();
+        self.just_pressed_btn.clear();
     }
 
     fn key_just_pressed(&self, input: Input) -> bool {
-        self.just_pressed.contains(&input_to_sdl_key(input))
+        self.just_pressed_key.contains(&input_to_sdl_key(input)) || self.just_pressed_btn.contains(&input_to_sdl_btn(input))
     }
 
     fn key_down(&self, input: Input) -> bool {
-        self.current.contains(&input_to_sdl_key(input))
+        self.current_key.contains(&input_to_sdl_key(input)) || self.current_btn.contains(&input_to_sdl_btn(input))
     }
 }
 
@@ -90,6 +115,11 @@ fn main() -> Result<(), String> {
     let video = ctx.video()?;
     // let timer = ctx.timer()?;
     let _audio = ctx.audio()?;
+    let controller = ctx.game_controller()?;
+    let _c = (0..controller.num_joysticks()?)
+        .find_map(|idx| {
+            controller.open(idx).ok()
+        });
 
     let frequency = 44_100;
     let format = sdl::mixer::AUDIO_S16LSB;
@@ -144,6 +174,18 @@ fn main() -> Result<(), String> {
                     ..
                 } => {
                     input_provider.push_key(x);
+                }
+                Event::ControllerButtonDown { button, .. } => {
+                    input_provider.push_btn(button);
+                }
+                Event::ControllerButtonUp { button, .. } => {
+                    input_provider.release_btn(button);
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::C),
+                    ..
+                } => {
+                    field.level += 50;
                 }
                 Event::KeyUp {
                     keycode:

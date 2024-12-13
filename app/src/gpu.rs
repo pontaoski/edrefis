@@ -194,6 +194,7 @@ impl Default for Camera3D {
 pub struct State<'a> {
     frame_texture: Option<Rc<wgpu::TextureView>>,
     frame: Option<wgpu::SurfaceTexture>,
+    texture_format: wgpu::TextureFormat,
 
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
@@ -220,20 +221,14 @@ pub struct State<'a> {
 }
 
 impl State<'_> {
-    pub async fn new<'a>(window: &'a sdl2::video::Window) -> Result<State<'a>, String> {
-        let (width, height) = window.size();
-
+    pub async fn new<'a, F: FnOnce (&wgpu::Instance) -> Result<wgpu::Surface<'a>, String>>(width: u32, height: u32, maker: F) -> Result<State<'a>, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
+            backends: wgpu::Backends::PRIMARY | wgpu::Backends::SECONDARY,
             dx12_shader_compiler: Default::default(),
             ..Default::default()
         });
+        let surface = maker(&instance).map_err(|e| format!("failed to obtain surface: {}", e))?;
 
-        let surface = unsafe {
-            instance
-                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&window).unwrap())
-                .map_err(|e| e.to_string())?
-        };
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -246,15 +241,16 @@ impl State<'_> {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    required_limits: wgpu::Limits::default(),
+                    required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
                     label: Some("device"),
-                    required_features: wgpu::Features::POLYGON_MODE_LINE | wgpu::Features::POLYGON_MODE_POINT,
+                    required_features: wgpu::Features::empty(),
                     memory_hints: wgpu::MemoryHints::Performance,
                 },
                 None,
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())
+            .map_err(|e| format!("failed to obtain adapter: {}", e))?;
 
         let surface_caps = surface.get_capabilities(&adapter);
 
@@ -387,8 +383,10 @@ impl State<'_> {
             cache: None,
         });
 
-        let white_texture = Rc::new(State::white_texture(&device, &queue, &texture_bind_group_layout));
-        let frame = surface.get_current_texture().map_err(|e| e.to_string())?;
+        let frame = surface.get_current_texture().map_err(|e| e.to_string())
+            .map_err(|e| format!("failed to get surface texture: {}", e))?;
+        let texture_format = frame.texture.format();
+        let white_texture = Rc::new(State::white_texture(&device, &queue, &texture_bind_group_layout, texture_format));
         let output = Rc::new(frame.texture.create_view(&wgpu::TextureViewDescriptor::default()));
 
         // Set up text renderer
@@ -399,7 +397,7 @@ impl State<'_> {
         let swash_cache = glyphon::SwashCache::new();
         let cache = glyphon::Cache::new(&device);
         let viewport = glyphon::Viewport::new(&device, &cache);
-        let mut atlas = glyphon::TextAtlas::new(&device, &queue, &cache, wgpu::TextureFormat::Bgra8UnormSrgb);
+        let mut atlas = glyphon::TextAtlas::new(&device, &queue, &cache, texture_format);
         let text_renderer =
             glyphon::TextRenderer::new(&mut atlas, &device, wgpu::MultisampleState::default(), None);
 
@@ -415,6 +413,7 @@ impl State<'_> {
 
             frame: Some(frame),
             frame_texture: Some(output),
+            texture_format,
 
             active_render_pass: None,
 
@@ -431,7 +430,7 @@ impl State<'_> {
             indices: vec![],
         })
     }
-    fn white_texture(device: &wgpu::Device, queue: &wgpu::Queue, texture_bind_group_layout: &wgpu::BindGroupLayout) -> wgpu::BindGroup {
+    fn white_texture(device: &wgpu::Device, queue: &wgpu::Queue, texture_bind_group_layout: &wgpu::BindGroupLayout, format: wgpu::TextureFormat) -> wgpu::BindGroup {
         let size = wgpu::Extent3d {
             width: 1,
             height: 1,
@@ -443,7 +442,7 @@ impl State<'_> {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("blocks"),
             view_formats: &[],
@@ -505,7 +504,7 @@ impl State<'_> {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            format: self.texture_format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
             label: Some("blocks"),
             view_formats: &[],
@@ -539,10 +538,15 @@ impl State<'_> {
 
         (Rc::new(texture_bind_group), Rc::new(texture_view))
     }
-    pub fn upload_texture(&self, surface: &sdl2::surface::Surface) -> Rc<wgpu::BindGroup> {
+    pub fn upload_texture(&self, png_bytes: &[u8]) -> Result<Rc<wgpu::BindGroup>, String> {
+        let header = minipng::decode_png_header(png_bytes).map_err(|e| e.to_string()).map_err(|e| format!("failed to decode PNG header: {}", e))?;
+        let mut buffer = vec![0; header.required_bytes_rgba8bpc()];
+        let mut png = minipng::decode_png(png_bytes, &mut buffer).map_err(|e| e.to_string()).map_err(|e| format!("failed to decode PNG: {}", e))?;
+        png.convert_to_rgba8bpc().map_err(|e| e.to_string()).map_err(|e| format!("failed to convert PNG to rgba8bpc: {}", e))?;
+
         let size = wgpu::Extent3d {
-            width: surface.width(),
-            height: surface.height(),
+            width: png.width(),
+            height: png.height(),
             depth_or_array_layers: 1,
         };
 
@@ -563,11 +567,11 @@ impl State<'_> {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            surface.without_lock().unwrap(),
+            png.pixels(),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(surface.pitch()),
-                rows_per_image: Some(surface.height()),
+                bytes_per_row: Some(png.bytes_per_row() as u32),
+                rows_per_image: Some(png.height()),
             },
             size,
         );
@@ -598,7 +602,7 @@ impl State<'_> {
             label: Some("texture_bind_group"),
         });
 
-        Rc::new(texture_bind_group)
+        Ok(Rc::new(texture_bind_group))
     }
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(), String> {
         self.config.width = width as u32;
@@ -615,7 +619,8 @@ impl State<'_> {
         let next_frame = self
             .surface
             .get_current_texture()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())
+            .map_err(|e| format!("failed to get current texture of surface after a resize: {}", e))?;
 
         let next_output = next_frame
             .texture
@@ -773,11 +778,12 @@ impl State<'_> {
                     custom_glyphs: &[],
                 }],
                 &mut self.swash_cache,
-            ).map_err(|e| e.to_string())?;
+            ).map_err(|e| e.to_string())
+            .map_err(|e| format!("failed to prepare a text render: {}", e))?;
 
         let (_, ref mut render_pass) = self.active_render_pass.as_mut().ok_or("tried to draw without a render pass being active")?;
 
-        self.text_renderer.render(&self.atlas, &self.viewport, render_pass).map_err(|e| e.to_string())?;
+        self.text_renderer.render(&self.atlas, &self.viewport, render_pass).map_err(|e| e.to_string()).map_err(|e| format!("failed to complete a text render: {}", e))?;
 
         Ok(())
     }
@@ -790,7 +796,8 @@ impl State<'_> {
         let next_frame = self
             .surface
             .get_current_texture()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())
+            .map_err(|e| format!("failed to get current texture for present: {}", e))?;
 
         let next_output = next_frame
             .texture

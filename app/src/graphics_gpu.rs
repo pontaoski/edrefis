@@ -5,8 +5,11 @@
 use std::rc::Rc;
 use glam::{Vec2, Vec3};
 use logic::{field::{level_to_gravity, Field}, piece::Piece, well::{Block, BlockDirections, Well, WELL_COLS, WELL_ROWS}};
-use sdl2::image::ImageRWops;
-use crate::{gpu::{parallelogram, rectangle, Camera2D, Camera3D, State}, lerp};
+use crate::{gpu::{parallelogram, rectangle, Camera2D, Camera3D, State}};
+
+fn lerp(a: f32, b: f32, f: f32) -> f32 {
+    a * (1.0 - f) + (b * f)
+}
 
 fn texture_index(block: Block) -> i32 {
     match block {
@@ -49,9 +52,8 @@ pub struct Graphics {
 
 impl Graphics {
     pub fn new(state: &mut State) -> Result<Graphics, String> {
-        let png = sdl2::rwops::RWops::from_bytes(include_bytes!("gfx/tiles.png"))?.load_png()?;
+        let tilemap = state.upload_texture(include_bytes!("gfx/tiles.png"))?;
 
-        let tilemap = state.upload_texture(&png);
         let well = state.create_texture(WELL_COLS as u32 * 8, WELL_ROWS as u32 * 8);
         let next = state.create_texture(4 * 8, 4 * 8);
         let mut buffer = state.create_buffer();

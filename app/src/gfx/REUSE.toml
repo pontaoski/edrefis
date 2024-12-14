@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2024 Janet Blackquill <uhhadd@gmail.com>
+#
+# SPDX-License-Identifier: CC0-1.0
+
+version = 1
+
+# https://commons.wikimedia.org/wiki/File:DDR_1980-05._Magdeburg,_Deutsche_Demokratische_Republik_(5726392628).jpg
+# https://commons.wikimedia.org/wiki/File:DDR_1980-05._Magdeburg,_Deutsche_Demokratische_Republik_(5725849467).jpg
+# https://www.flickr.com/photos/52086447@N00/5993689514/in/album-72157720066464915/
+# https://commons.wikimedia.org/wiki/File:DDR_1980-05._Hotel_International,_Magdeburg,_Deutsche_Demokratische_Republik_(5726406774).jpg
+# https://www.flickr.com/photos/52086447@N00/4845638783/in/album-72157626733515952
+# https://www.flickr.com/photos/52086447@N00/9356253761/in/album-72157626733515952
+# https://www.flickr.com/photos/52086447@N00/4845651281/in/album-72157624621473586
+# https://www.flickr.com/photos/52086447@N00/4846286648/in/album-72157624621473586
+# https://www.flickr.com/photos/52086447@N00/4846260130/in/album-72157624621473586
+[[annotations]]
+path = ["level000.*", "level100.*", "level200.*", "level300.*", "level400.*", "level500.*", "level600.*", "level700.*", "level800.*", "level900.*"]
+SPDX-FileCopyrightText = "Michel Huhardeaux 1980"
+SPDX-License-Identifier = "CC-BY-SA-2.0"
+
+# https://commons.wikimedia.org/wiki/File:Berlin,_Palast_der_Republik_--_um_1990_--_2.jpg
+[[annotations]]
+path = ["level1000.*"]
+SPDX-FileCopyrightText = "Dietmar Rabich 1990"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+

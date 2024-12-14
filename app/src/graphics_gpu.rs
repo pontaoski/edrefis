@@ -45,6 +45,17 @@ const TILEMAP_HEIGHT: f32 = 1. / 8.;
 
 pub struct Graphics {
     tilemap: Rc<wgpu::BindGroup>,
+    level000: Rc<wgpu::BindGroup>,
+    level100: Rc<wgpu::BindGroup>,
+    level200: Rc<wgpu::BindGroup>,
+    level300: Rc<wgpu::BindGroup>,
+    level400: Rc<wgpu::BindGroup>,
+    level500: Rc<wgpu::BindGroup>,
+    level600: Rc<wgpu::BindGroup>,
+    level700: Rc<wgpu::BindGroup>,
+    level800: Rc<wgpu::BindGroup>,
+    level900: Rc<wgpu::BindGroup>,
+    level1000: Rc<wgpu::BindGroup>,
     well: (Rc<wgpu::BindGroup>, Rc<wgpu::TextureView>),
     next: (Rc<wgpu::BindGroup>, Rc<wgpu::TextureView>),
     score_buffer: glyphon::Buffer,
@@ -52,7 +63,7 @@ pub struct Graphics {
 
 impl Graphics {
     pub fn new(state: &mut State) -> Result<Graphics, String> {
-        let tilemap = state.upload_texture(include_bytes!("gfx/tiles.png"))?;
+        let tilemap = state.upload_texture(include_bytes!("gfx/tiles.png"), wgpu::FilterMode::Linear)?;
 
         let well = state.create_texture(WELL_COLS as u32 * 8, WELL_ROWS as u32 * 8);
         let next = state.create_texture(4 * 8, 4 * 8);
@@ -64,6 +75,17 @@ impl Graphics {
             well,
             next,
             score_buffer: buffer,
+            level000: state.upload_texture(include_bytes!("gfx/level000.png"), wgpu::FilterMode::Nearest)?,
+            level100: state.upload_texture(include_bytes!("gfx/level100.png"), wgpu::FilterMode::Nearest)?,
+            level200: state.upload_texture(include_bytes!("gfx/level200.png"), wgpu::FilterMode::Nearest)?,
+            level300: state.upload_texture(include_bytes!("gfx/level300.png"), wgpu::FilterMode::Nearest)?,
+            level400: state.upload_texture(include_bytes!("gfx/level400.png"), wgpu::FilterMode::Nearest)?,
+            level500: state.upload_texture(include_bytes!("gfx/level500.png"), wgpu::FilterMode::Nearest)?,
+            level600: state.upload_texture(include_bytes!("gfx/level600.png"), wgpu::FilterMode::Nearest)?,
+            level700: state.upload_texture(include_bytes!("gfx/level700.png"), wgpu::FilterMode::Nearest)?,
+            level800: state.upload_texture(include_bytes!("gfx/level800.png"), wgpu::FilterMode::Nearest)?,
+            level900: state.upload_texture(include_bytes!("gfx/level900.png"), wgpu::FilterMode::Nearest)?,
+            level1000: state.upload_texture(include_bytes!("gfx/level1000.png"), wgpu::FilterMode::Nearest)?,
         })
     }
     pub fn score_text(buffer: &mut glyphon::Buffer, state: &mut State, gravity: i32, level: u32) {
@@ -333,13 +355,50 @@ impl Graphics {
 
         Ok(())
     }
+    pub fn render_background(&self, level: u32, state: &mut State) -> Result<(), String> {
+        let bg =
+            if level >= 1000 {
+                &self.level1000
+            } else if level >= 900 {
+                &self.level900
+            } else if level >= 800 {
+                &self.level800
+            } else if level >= 700 {
+                &self.level700
+            } else if level >= 600 {
+                &self.level600
+            } else if level >= 500 {
+                &self.level500
+            } else if level >= 400 {
+                &self.level400
+            } else if level >= 300 {
+                &self.level300
+            } else if level >= 200 {
+                &self.level200
+            } else if level >= 100 {
+                &self.level100
+            } else {
+                &self.level000
+            };
+
+        state.set_texture(Some(bg.clone()));
+
+        state.queue_draw(rectangle(Vec3::ZERO, 1., 1., Vec2::ZERO, 1., 1., wgpu::Color::WHITE));
+        state.do_draw()?;
+
+        Ok(())
+    }
     pub fn render(&mut self, field: &Field, well: &Well, piece: Option<&Piece>, next: &Piece, state: &mut State) -> Result<(), String> {
         self.render_well(well, piece, state)?;
         self.render_next(next, state)?;
 
+
+        state.set_camera(&Camera2D::from_rect(Vec2::ZERO, Vec2::new(1., 1.), None));
+        state.start_render_pass(Some(wgpu::Color { r: 0.05, g: 0.05, b: 0.1, a: 1.0 }));
+        self.render_background(field.level, state)?;
+
         state.set_camera(&Camera3D::default());
 
-        state.start_render_pass(Some(wgpu::Color { r: 0.05, g: 0.05, b: 0.1, a: 1.0 }));
         state.set_texture(None);
 
         Graphics::queue_well_bg(state);

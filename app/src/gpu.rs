@@ -538,7 +538,7 @@ impl State<'_> {
 
         (Rc::new(texture_bind_group), Rc::new(texture_view))
     }
-    pub fn upload_texture(&self, png_bytes: &[u8]) -> Result<Rc<wgpu::BindGroup>, String> {
+    pub fn upload_texture(&self, png_bytes: &[u8], filter: wgpu::FilterMode) -> Result<Rc<wgpu::BindGroup>, String> {
         let header = minipng::decode_png_header(png_bytes).map_err(|e| e.to_string()).map_err(|e| format!("failed to decode PNG header: {}", e))?;
         let mut buffer = vec![0; header.required_bytes_rgba8bpc()];
         let mut png = minipng::decode_png(png_bytes, &mut buffer).map_err(|e| e.to_string()).map_err(|e| format!("failed to decode PNG: {}", e))?;
@@ -581,9 +581,9 @@ impl State<'_> {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mag_filter: filter,
+            min_filter: filter,
+            mipmap_filter: filter,
             ..Default::default()
         });
 

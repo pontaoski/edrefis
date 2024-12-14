@@ -14,23 +14,6 @@
   </head>
   <body>
     <canvas id="canvas"></canvas>
-    <script type="module">
-      import init from './pkg/edrefis_web.js'
-
-      async function run() {
-        await init()
-      }
-
-      const canvas = document.getElementById("canvas")
-      function resizeCanvas() {
-        canvas.width = canvas.clientWidth
-        canvas.height = canvas.clientHeight
-      }
-
-      const observer = new ResizeObserver(resizeCanvas)
-      observer.observe(canvas)
-
-      run()
-    </script>
+    <script type="module" src="index.js"></script>
   </body>
 </html>

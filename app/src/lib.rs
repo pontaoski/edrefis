@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 mod main_web;
 
 #[cfg(target_family = "wasm")]
-#[wasm_bindgen(start)]
-pub fn start() -> Result<(), String> {
-    main_web::main()
+#[wasm_bindgen]
+pub async fn new_app(canvas: web_sys::HtmlCanvasElement) -> Result<main_web::App, String> {
+    main_web::App::new(canvas).await
 }
